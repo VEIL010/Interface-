@@ -37,16 +37,24 @@
 {%- endmacro -%}
 
 {%- macro disclaimer() -%}
-  <p class="footnote">
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.5v3.75M8 4.75v.15"/></svg>
-    <span>{{ meta.disclaimer }}</span>
-  </p>
+  <p class="footnote">{{ meta.disclaimer }}</p>
 {%- endmacro -%}
 
 
-{% if error %}
+{% if heart_fields %}
+<div class="sheet sheet--idle">
+  <div class="sheet__head">
+    <div class="sheet__titles">
+      <h2 class="sheet__title">유사 기록</h2>
+      <p class="sheet__sub">검색 API 연결 후 이곳에서 유사 기록을 확인할 수 있습니다.</p>
+    </div>
+  </div>
+</div>
+
+
+{% elif error %}
 {# ── 검색하지 못함: 입력 오류(422) 또는 미연결 방식(501) ─────────── #}
-<div class="panel sheet sheet--error" role="alert" data-bm-invalid="{{ error.fields|join(',') }}">
+<div class="sheet sheet--error" role="alert" data-bm-invalid="{{ error.fields|join(',') }}">
   <div class="sheet__head sheet__head--alert">
     <svg class="sheet__alert" width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75v3.75M8 11.1v.15"/></svg>
     <div class="sheet__titles">
@@ -72,7 +80,7 @@
 
 {% elif result %}
 {# ── 결과 ─────────────────────────────────────────────────────── #}
-<div class="panel sheet" data-query='{{ result.query.inputs|tojson }}' data-top-k="{{ result.top_k }}"
+<div class="sheet" data-query='{{ result.query.inputs|tojson }}' data-top-k="{{ result.top_k }}"
      {% if result.results %}data-summary="검색 완료. 유사 기록 {{ result.results|length }}건, 1위 {{ result.results[0].record_id }}, 유사도 {{ result.results[0].score_text }}."{% endif %}>
   <div class="sheet__head">
     <div class="sheet__titles">
@@ -124,17 +132,16 @@
   <div class="sheet__foot">
     {{ disclaimer() }}
     <p class="footnote">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.75 13 3.6v4.15c0 3.05-2.1 5.3-5 6.5-2.9-1.2-5-3.45-5-6.5V3.6z"/><path d="M5.9 8.1 7.4 9.6l2.8-3.1"/></svg>
       {% if meta.backend.encrypted %}
-      <span>상세 기록을 요청하면 열람 권한을 확인하고 접근 기록을 남깁니다.</span>
+      상세 기록을 요청하면 열람 권한을 확인하고 접근 기록을 남깁니다.
       {% else %}
-      <span>상세 기록을 요청하면 예시 계정의 열람 권한을 모의 확인하고 로컬에 요청을 기록합니다.</span>
+      상세 기록을 요청하면 예시 계정의 열람 권한을 모의 확인하고 로컬에 요청을 기록합니다.
       {% endif %}
     </p>
   </div>
 </div>
 
-<details class="panel process">
+<details class="process">
   <summary class="process__title">검색 과정</summary>
   <div class="process__body">
     <div class="process__head">
@@ -151,13 +158,13 @@
     <ol class="flow" role="list">
       {% for s in result.pipeline %}
       <li class="stage stage--{{ s.actor }}" title="{{ s.detail }}">
-        <div class="stage__meta">
-          <span class="stage__no"><span class="sr">단계 </span>{{ loop.index }}</span>
-          {% if s.ms_text %}<span class="stage__ms"><span class="sr">측정 시간 </span>{{ s.ms_text }}</span>{% endif %}
+        <span class="stage__no"><span class="sr">단계 </span>{{ loop.index }}</span>
+        <div class="stage__what">
+          <p class="stage__label">{{ s.label }}</p>
+          <p class="stage__actor">{{ s.actor_label }}</p>
         </div>
-        <p class="stage__label">{{ s.label }}</p>
-        <p class="stage__actor">{{ s.actor_label }}</p>
         <span class="tag tag--{{ s.status }}">{{ status_glyph(s.status) }}{{ s.status_label }}</span>
+        <span class="stage__ms">{% if s.ms_text %}<span class="sr">측정 시간 </span>{{ s.ms_text }}{% endif %}</span>
       </li>
       {% endfor %}
     </ol>
@@ -169,7 +176,7 @@
 
 {% else %}
 {# ── 검색 전 ──────────────────────────────────────────────────── #}
-<div class="panel sheet sheet--idle">
+<div class="sheet sheet--idle">
   <div class="sheet__head">
     <div class="sheet__titles">
       <h2 class="sheet__title">유사 기록</h2>

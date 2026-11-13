@@ -12,13 +12,21 @@
 (function () {
   'use strict';
 
+  var inputs = document.querySelector('[data-heart-inputs], form[data-bm-search]');
+  if (!inputs) return;
+
+  var exampleFields = inputs.querySelectorAll('[data-example]');
+  inputs.querySelector('[data-example-fill]').addEventListener('click', function () {
+    exampleFields.forEach(function (field) { field.value = field.dataset.example; });
+    inputs.dispatchEvent(new Event('input'));
+  });
+
   var results = document.getElementById('results');
-  var form = document.querySelector('form[data-bm-search]');
-  if (!results || !form) return;
+  if (!results || !inputs.matches('form')) return;
+  var form = inputs;
 
   var status = document.getElementById('a-status');
   var stale = document.getElementById('a-stale');
-  var exampleFields = form.querySelectorAll('[data-example]');
   var searched;
 
   function syncResultStatus() {
@@ -42,10 +50,6 @@
     if (stale.textContent !== message) stale.textContent = message;
   }
 
-  form.querySelector('[data-example-fill]').addEventListener('click', function () {
-    exampleFields.forEach(function (field) { field.value = field.dataset.example; });
-    showStaleNotice();
-  });
   form.addEventListener('input', showStaleNotice);
   syncResultStatus();
 

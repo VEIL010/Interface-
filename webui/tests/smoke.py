@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", message=".*starlette.testclient.*")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import backend  # noqa: E402
+from app import backend, heart_fields  # noqa: E402
 from app.main import DRAFTS, STATIC_DIR, TEMPLATE_DIR, app  # noqa: E402
 
 EXAMPLE = backend.default_form()
@@ -40,7 +40,7 @@ def check(condition: bool, message: str) -> None:
 def check_api() -> None:
     print("[공통] 서버와 JSON API")
     home = client.get("/")
-    check(home.status_code == 200 and 'action="/drafts/a/search"' in home.text, "GET / → 의료진 검색 화면")
+    check(home.status_code == 200 and 'name="trestbps"' in home.text, "GET / → 의료진 질의 입력 화면")
     check("P023" not in home.text and 'href="/drafts/b?state=empty"' in home.text, "기본 화면은 검색 전 상태이며 발표 모드에 연결")
     archive = client.get("/drafts")
     check(archive.status_code == 200 and all(f'href="/drafts/{key}"' in archive.text for key in ("c", "d")), "보관 목록에서 C·D 열기")
@@ -72,7 +72,8 @@ def check_draft(key: str) -> None:
     if not (base / "page.html").exists():
         return
 
-    page = client.get(f"/drafts/{key}")
+    legacy_query = "?state=legacy" if key in ("a", "b") else ""
+    page = client.get(f"/drafts/{key}{legacy_query}")
     html = page.text
     check(page.status_code == 200, "전체 페이지 → 200")
     check('lang="ko"' in html, 'html lang="ko"')
@@ -98,7 +99,8 @@ def check_draft(key: str) -> None:
 
     empty = client.get(f"/drafts/{key}?state=empty")
     check(empty.status_code == 200 and "P023" not in empty.text, "빈 상태 페이지 (결과 없음)")
-    check("data-bm-search" in empty.text, "빈 상태에도 검색 폼")
+    if key in ("c", "d"):
+        check("data-bm-search" in empty.text, "빈 상태에도 검색 폼")
 
     frag = client.post(f"/drafts/{key}/search", json=EXAMPLE)
     check(frag.status_code == 200 and "P023" in frag.text and "0.971" in frag.text, "검색 조각 → 200, 결과 포함")
@@ -127,6 +129,18 @@ def check_draft(key: str) -> None:
     check(missing.status_code == 404 and "존재하지 않는" in missing.text, "없는 기록 → 404 표시")
 
 
+def check_heart_draft(key: str) -> None:
+    print(f"[시안 {key.upper()}] Heart Disease 질의 입력")
+    page = client.get(f"/drafts/{key}")
+    check(page.status_code == 200 and "검색 API 연결 대기" in page.text, "검색 API 연결 대기 상태 표시")
+    check("<form" not in page.text and "data-bm-search" not in page.text, "API 연결 전 질의 제출 경로 없음")
+    check(
+        all(f'name="{field["key"]}"' in page.text for field in heart_fields.FIELDS)
+        and len(heart_fields.FIELDS) == 13 and 'name="num"' not in page.text,
+        "결과 레이블을 제외한 13개 파이프라인 입력",
+    )
+
+
 def main() -> int:
     keys = [k.lower() for k in sys.argv[1:]] or [
         k for k in DRAFTS if (TEMPLATE_DIR / "drafts" / k / "page.html").exists()
@@ -138,6 +152,8 @@ def main() -> int:
     check_api()
     for key in keys:
         check_draft(key)
+        if key in ("a", "b"):
+            check_heart_draft(key)
     print()
     if failures:
         print(f"실패 {len(failures)}건")

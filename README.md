@@ -2,6 +2,42 @@
 
 VEIL의 의료 기록 검색 인터페이스입니다. 기본 화면(A)에는 Cleveland 특징 13개 입력란이 있습니다. **발표 모드**(B)에서는 예시 입력과 목표 암호화 검색 흐름을 볼 수 있습니다. C·D 시안은 **보관 시안** 메뉴에서 합성 데이터로 실행할 수 있습니다.
 
+## 화면 미리보기
+
+### A · 의료진 검색
+
+환자 속성 13개를 다섯 그룹으로 입력합니다. 아래는 검색 API 연결 전 화면입니다.
+
+![A 의료진 검색 화면. 왼쪽에 환자 정보 입력, 오른쪽에 유사 기록 결과 영역이 표시됩니다.](docs/screenshots/a-clinical-search.png)
+
+### B · 발표 모드
+
+의료기관의 질의 입력부터 서버 연산과 의료기관의 결과 확인까지 목표 흐름을 보여줍니다.
+
+![B 발표 모드. 예시 질의 아래에 의료기관, 서버, 의료기관의 목표 검색 흐름이 표시됩니다.](docs/screenshots/b-presentation.png)
+
+<details>
+<summary>C · 단계형 가이드 (합성 데이터 데모)</summary>
+
+| 환자 정보 입력 | 검색 과정 |
+| --- | --- |
+| ![C 시안 1단계 환자 정보 입력](docs/screenshots/c-1-patient-input.png) | ![C 시안 2단계 평문 검색 과정과 연결 상태](docs/screenshots/c-2-search-process.png) |
+
+| 유사 기록 Top-3 | 상세 기록 열람 안내 |
+| --- | --- |
+| ![C 시안 3단계 합성 기록의 순위와 유사도](docs/screenshots/c-3-ranked-results.png) | ![C 시안 4단계 상세 기록 권한 확인 안내](docs/screenshots/c-4-record-access.png) |
+
+</details>
+
+<details>
+<summary>D · 벤치마크 콘솔 (합성 데이터 데모)</summary>
+
+평문 검색 결과와 단계별 실행 시간을 표시합니다. 하단의 논문 보고값은 별도로 표시됩니다.
+
+![D 벤치마크 콘솔. 합성 데이터 평문 검색 순위, 단계별 시간, 방식 비교를 표시합니다.](docs/screenshots/d-benchmark.png)
+
+</details>
+
 ## 저장소별 역할
 
 | 저장소 | 역할 |

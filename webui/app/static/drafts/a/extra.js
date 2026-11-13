@@ -43,7 +43,12 @@
     var changed = searched && (
       searched.topK !== form.elements.top_k.value ||
       searched.inputs.some(function (input) {
-        return form.elements[input.key].valueAsNumber !== input.value;
+        // 숫자 입력란과 선택 상자를 같이 비교하려고 글자로 맞춘다 ("52" 와 52 는 같다)
+        var current = form.elements[input.key].value;
+        var number = Number(current);
+        return current === '' || isNaN(number) || typeof input.value === 'string'
+          ? String(current) !== String(input.value)
+          : number !== input.value;
       })
     );
     var message = changed ? '이전 검색 결과입니다. 현재 입력값으로 보려면 다시 검색하세요.' : '';
@@ -86,7 +91,7 @@
     syncFieldErrors();
     syncResultStatus();
 
-    var firstInvalid = form.querySelector('input:not([type="hidden"])[aria-invalid="true"]');
+    var firstInvalid = form.querySelector('input:not([type="hidden"])[aria-invalid="true"], select[aria-invalid="true"]');
     if (firstInvalid) {
       firstInvalid.focus();
       if (firstInvalid.select) firstInvalid.select();

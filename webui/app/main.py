@@ -6,9 +6,8 @@
 화면 흐름
     GET  /                                    의료진 검색 화면 (시안 A)
     GET  /drafts                              보관된 시안 목록
-    GET  /drafts/{key}                         시안 전체 페이지 (예시 질의 결과가 채워진 상태)
-    GET  /drafts/{key}?state=empty             검색 전 빈 상태
-    POST /drafts/{key}/search                  결과 영역 HTML 조각 (_results.html)
+    GET  /drafts/{key}                         A·B 질의 입력 또는 C·D 보관 시안
+    POST /drafts/{key}/search                  기존 데모 검색 결과 HTML 조각
     POST /drafts/{key}/records/{id}/access     상세 기록 HTML 조각 (_record.html)
 
 같은 기능의 JSON API 는 /api/* 에 있다 (/api/docs 참고).
@@ -24,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
-from . import backend
+from . import backend, heart_fields
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -160,11 +159,12 @@ def draft_page(request: Request, key: str, state: str | None = None):
         return _not_found("없는 시안입니다.")
     if not _draft_ready(key):
         return _not_found(f"시안 {DRAFTS[key]['letter']} 는 아직 준비 중입니다.")
-    if state == "empty":
-        form = backend.default_form()
-        if key == "a":
-            form.update({feature.key: "" for feature in backend.FEATURES})
-        context = _draft_context(key, form)
+    if key in ("a", "b") and state != "legacy":
+        context = _draft_context(key, heart_fields.form_values(example=key == "b"))
+        context["heart_fields"] = heart_fields.FIELDS
+        context["heart_groups"] = heart_fields.groups()
+    elif state == "empty":
+        context = _draft_context(key)
     else:
         form, result, error, _ = _run_search(backend.default_form())
         context = _draft_context(key, form, _with_links(result, f"/drafts/{key}/records"), error)

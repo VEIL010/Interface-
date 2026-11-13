@@ -23,7 +23,9 @@
     </h1>
 
     <ul class="chips" aria-label="연결 상태">
-      {% if heart_fields %}
+      {% if heart_search %}
+      <li class="chip chip--open">평문 기준 검색 · 암호화 미연결</li>
+      {% elif heart_fields %}
       <li class="chip chip--open">검색 API 연결 대기</li>
       {% elif meta.backend.encrypted %}
       <li class="chip">비밀키는 이 기기에만 보관됩니다</li>
@@ -45,7 +47,9 @@
 
   {# ── 왼쪽: 입력 ─────────────────────────────────────────── #}
   <section class="panel pane-form{% if heart_fields %} pane-form--query{% endif %}" aria-labelledby="form-title">
-    {% if heart_fields %}
+    {% if heart_search %}
+    <form class="form" method="post" data-bm-search data-heart-inputs action="{{ urls.heart_search }}" data-bm-target="#results" novalidate>
+    {% elif heart_fields %}
     <div class="form" data-heart-inputs>
     {% else %}
     <form class="form" method="post" data-bm-search action="{{ urls.search }}" data-bm-target="#results" novalidate>
@@ -116,7 +120,7 @@
       {% endif %}
 
       <div class="form__run">
-        {% if heart_fields %}
+        {% if heart_fields and not heart_search %}
         <button class="btn btn--primary" type="button" disabled aria-describedby="search-availability">유사 기록 검색</button>
         {% else %}
         <fieldset class="seg">
@@ -129,7 +133,7 @@
           </div>
         </fieldset>
 
-        <input type="hidden" name="method" value="{{ form.method }}">
+        {% if not heart_fields %}<input type="hidden" name="method" value="{{ form.method }}">{% endif %}
 
         <button class="btn btn--primary" type="submit">
           <span class="btn__label">유사 기록 검색</span>
@@ -138,7 +142,10 @@
         {% endif %}
       </div>
 
-      {% if heart_fields %}
+      {% if heart_search %}
+      <p class="note">입력값은 이 서버에서 벡터로 바뀐 뒤 검색 서버로 전송됩니다. 암호화는 아직 적용되지 않습니다.</p>
+    </form>
+      {% elif heart_fields %}
       <p class="note" id="search-availability">검색 API가 연결되면 검색할 수 있습니다.</p>
     </div>
       {% else %}
@@ -155,7 +162,7 @@
 
   {# ── 오른쪽: 결과 (검색할 때마다 교체되는 영역) ───────────── #}
   <div class="pane-results">
-    {% if not heart_fields %}
+    {% if not heart_fields or heart_search %}
     <p class="sr" id="a-status" role="status"></p>
     <p class="stale" id="a-stale" role="status"></p>
     {% endif %}
@@ -163,12 +170,12 @@
       {% include "drafts/" ~ draft.key ~ "/_results.html" %}
     </section>
     {# #results 에 aria-busy 가 붙어 있는 동안에만 보인다 (style.css 의 "검색 중" 참고) #}
-    {% if not heart_fields %}<p class="busy" aria-hidden="true"><span class="spinner"></span>검색 중…</p>{% endif %}
+    {% if not heart_fields or heart_search %}<p class="busy" aria-hidden="true"><span class="spinner"></span>검색 중…</p>{% endif %}
   </div>
 
 </main>
 
-{% if not heart_fields %}<script src="{{ asset('shared/bm.js') }}" defer></script>{% endif %}
+{% if not heart_fields or heart_search %}<script src="{{ asset('shared/bm.js') }}" defer></script>{% endif %}
 <script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
 </body>
 </html>

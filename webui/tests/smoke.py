@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import sys
 import warnings
@@ -21,7 +23,7 @@ warnings.filterwarnings("ignore", message=".*starlette.testclient.*")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import backend, heart_fields  # noqa: E402
+from app import backend, heart_fields, heart_query  # noqa: E402
 from app.main import DRAFTS, STATIC_DIR, TEMPLATE_DIR, app  # noqa: E402
 
 EXAMPLE = backend.default_form()
@@ -141,6 +143,57 @@ def check_heart_draft(key: str) -> None:
     )
 
 
+def check_heart_search() -> None:
+    """검색 API 가 연결된 A 화면. 검색 서버는 가짜(httpx.MockTransport)로 대신한다."""
+    print("[시안 A] Heart Disease 검색 (검색 API 연결)")
+    if not (heart_query.pipeline_dir() / "preprocessor.joblib").is_file():
+        print("  skip  전처리기(.pipeline-data)가 없어 건너뜀")
+        return
+    import httpx
+
+    seen: list[dict] = []
+
+    def fake_api(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        hits = [{"rank": i, "record_id": f"H{i:05d}", "score": 1 - i / 10} for i in range(1, body["top_k"] + 1)]
+        return httpx.Response(200, json={"encrypted": False, "searched": 283, "results": hits})
+
+    example = {**heart_fields.form_values(example=True), "top_k": "5"}
+    os.environ["VEIL_SEARCH_API_URL"] = "http://search.test"
+    heart_query.transport = httpx.MockTransport(fake_api)
+    try:
+        page = client.get("/")
+        check('action="/drafts/a/heart-search"' in page.text and "검색 API 연결 대기" not in page.text, "검색 폼이 켜짐")
+        check("data-bm-search" not in client.get("/drafts/b").text, "발표 모드는 검색을 켜지 않음")
+
+        frag = client.post("/drafts/a/heart-search", json=example)
+        check(frag.status_code == 200 and "H00001" in frag.text and "0.900" in frag.text, "검색 조각 → 200, 결과 표시")
+        sent = seen[-1] if seen else {}
+        vector = sent.get("vector", [])
+        check(sent.get("scheme") == "plaintext" and sent.get("top_k") == 5, "검색 서버에 scheme·top_k 전달")
+        check(len(vector) == 32 and abs(sum(x * x for x in vector) - 1) < 1e-9, "32차원 L2 정규화 벡터 전달")
+        check(not (set(sent) - {"scheme", "vector", "top_k"}), "원본 의료 속성은 검색 서버로 보내지 않음")
+
+        thal = {**example, "thal": "7"}
+        client.post("/drafts/a/heart-search", json=thal)
+        check(seen[-1]["vector"] != vector, "thal 값이 벡터에 반영됨 (전처리기 범주 표기와 일치)")
+
+        optional = client.post("/drafts/a/heart-search", json={**example, "ca": "", "thal": ""})
+        check(optional.status_code == 200, "선택 입력(ca·thal)을 비워도 검색")
+
+        bad = client.post("/drafts/a/heart-search", json={**example, "age": "abc", "sex": "9", "chol": ""})
+        check(bad.status_code == 422 and 'data-bm-invalid="age,chol,sex"' in bad.text, "잘못된 입력 → 422, 필드 표시")
+
+        heart_query.transport = httpx.MockTransport(lambda request: httpx.Response(503))
+        down = client.post("/drafts/a/heart-search", json=example)
+        check(down.status_code == 502 and 'role="alert"' in down.text, "검색 서버 오류 → 502 안내")
+    finally:
+        heart_query.transport = None
+        del os.environ["VEIL_SEARCH_API_URL"]
+    check(client.post("/drafts/a/heart-search", json=example).status_code == 404, "API 주소가 없으면 검색 경로도 닫힘")
+
+
 def main() -> int:
     keys = [k.lower() for k in sys.argv[1:]] or [
         k for k in DRAFTS if (TEMPLATE_DIR / "drafts" / k / "page.html").exists()
@@ -154,6 +207,8 @@ def main() -> int:
         check_draft(key)
         if key in ("a", "b"):
             check_heart_draft(key)
+        if key == "a":
+            check_heart_search()
     print()
     if failures:
         print(f"실패 {len(failures)}건")

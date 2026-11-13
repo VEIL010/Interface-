@@ -8,6 +8,7 @@
     GET  /drafts                              보관된 시안 목록
     GET  /drafts/{key}                         A·B 질의 입력 또는 C·D 보관 시안
     POST /drafts/{key}/search                  기존 데모 검색 결과 HTML 조각
+    POST /drafts/a/heart-search                13개 속성 질의 → Medical-Search-API 검색 결과 HTML 조각
     POST /drafts/{key}/records/{id}/access     상세 기록 HTML 조각 (_record.html)
 
 같은 기능의 JSON API 는 /api/* 에 있다 (/api/docs 참고).
@@ -18,12 +19,13 @@ import asyncio
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
-from . import backend, heart_fields
+from . import backend, heart_fields, heart_query
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -111,6 +113,7 @@ def _draft_context(key: str, form=None, result=None, error=None) -> dict:
             "page": f"/drafts/{key}",
             "empty": f"/drafts/{key}?state=empty",
             "search": f"/drafts/{key}/search",
+            "heart_search": "/drafts/a/heart-search",
         },
     }
 
@@ -160,9 +163,8 @@ def draft_page(request: Request, key: str, state: str | None = None):
     if not _draft_ready(key):
         return _not_found(f"시안 {DRAFTS[key]['letter']} 는 아직 준비 중입니다.")
     if key in ("a", "b") and state != "legacy":
-        context = _draft_context(key, heart_fields.form_values(example=key == "b"))
-        context["heart_fields"] = heart_fields.FIELDS
-        context["heart_groups"] = heart_fields.groups()
+        form = {**heart_fields.form_values(example=key == "b"), "top_k": heart_query.DEFAULT_TOP_K}
+        context = _heart_context(key, form)
     elif state == "empty":
         context = _draft_context(key)
     else:
@@ -171,6 +173,39 @@ def draft_page(request: Request, key: str, state: str | None = None):
         context["initial_example"] = True
     return templates.TemplateResponse(
         request=request, name=f"drafts/{key}/page.html", context=context
+    )
+
+
+def _heart_context(key: str, form: dict, result=None, error=None) -> dict:
+    context = _draft_context(key, form, result, error)
+    context["heart_fields"] = heart_fields.FIELDS
+    context["heart_groups"] = heart_fields.groups()
+    # 검색은 의료진 화면(A)에서만 켠다. 발표 모드(B)는 목표 흐름을 보여 주는 화면이다.
+    context["heart_search"] = key == "a" and heart_query.enabled()
+    return context
+
+
+@app.post("/drafts/a/heart-search", response_class=HTMLResponse)
+async def heart_search(request: Request):
+    if not heart_query.enabled():
+        return _not_found("검색 API가 연결되지 않았습니다.")
+    form, values, top_k, field_errors = heart_query.parse(await _read_json(request))
+    result = error = None
+    status = 200
+    if field_errors:
+        error, status = {"message": "입력값을 확인해 주세요.", "fields": field_errors}, 422
+    else:
+        try:
+            vector = await run_in_threadpool(heart_query.vectorize, values)
+            found = await run_in_threadpool(heart_query.search, vector, top_k)
+            result = heart_query.present(form, values, top_k, found)
+        except heart_query.SearchUnavailable as exc:
+            error, status = {"message": str(exc), "fields": {}}, 502
+        except RuntimeError:
+            error, status = {"message": "입력값을 질의 벡터로 바꾸지 못했습니다.", "fields": {}}, 500
+    context = _heart_context("a", {**form, "top_k": top_k}, result, error)
+    return templates.TemplateResponse(
+        request=request, name="drafts/a/_results.html", context=context, status_code=status
     )
 
 

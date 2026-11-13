@@ -41,12 +41,16 @@
 {%- endmacro -%}
 
 
-{% if heart_fields %}
+{% if heart_fields and not error and not result %}
 <div class="sheet sheet--idle">
   <div class="sheet__head">
     <div class="sheet__titles">
       <h2 class="sheet__title">유사 기록</h2>
+      {% if heart_search %}
+      <p class="sheet__sub">환자 정보를 입력하고 검색하면 가장 유사한 기록이 여기에 표시됩니다.</p>
+      {% else %}
       <p class="sheet__sub">검색 API 연결 후 이곳에서 유사 기록을 확인할 수 있습니다.</p>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -67,7 +71,7 @@
   {% set other_labels = {'top_k': '결과 개수 (Top-K)', 'method': '계산 방식'} %}
   <ul class="errors">
     {% for key, message in error.fields.items() %}
-    {% set feature = meta.features|selectattr('key', 'equalto', key)|first %}
+    {% set feature = (heart_fields or meta.features)|selectattr('key', 'equalto', key)|first %}
     <li class="errors__item">
       <span class="errors__label">{{ feature.label if feature else other_labels.get(key, key) }}</span>
       <span class="errors__msg" data-error-for="{{ key }}">{{ message }}</span>
@@ -85,7 +89,7 @@
   <div class="sheet__head">
     <div class="sheet__titles">
       <h2 class="sheet__title">유사 기록 Top-{{ result.top_k }}</h2>
-      <p class="sheet__sub">{% if initial_example %}예시 검색 · {% endif %}등록 기록 {{ result.searched }}건과 비교</p>
+      <p class="sheet__sub">{% if initial_example %}예시 검색 · {% endif %}등록 기록 {{ result.searched }}건과 비교{% if heart_fields %} · {{ '암호화 검색' if result.encrypted else '평문 기준 검색' }}{% endif %}</p>
     </div>
 
     {# 입력란을 고친 뒤에도 이 결과가 어떤 값으로 검색한 것인지 알 수 있게 한다 #}
@@ -95,7 +99,7 @@
         {% for i in result.query.inputs %}
         <div class="echo__item">
           <dt>{{ i.label }}</dt>
-          <dd>{{ i.value }} <span class="echo__unit">{{ i.unit }}</span></dd>
+          <dd>{{ i.text if i.text is defined else i.value }} <span class="echo__unit">{{ i.unit }}</span></dd>
         </div>
         {% endfor %}
       </dl>
@@ -117,11 +121,16 @@
           </span>
           <span class="row__score"><span class="sr">유사도 </span>{{ r.score_text }}</span>
         </div>
+        {% if r.access_url %}
         <button class="btn btn--quiet row__action" type="button" data-bm-access="{{ r.access_url }}" data-bm-target="#{{ r.dom_id }}">
           <span class="btn__label"><span class="sr">{{ r.record_id }} </span>상세 기록 요청</span>
           <span class="btn__busy" aria-hidden="true"><span class="spinner"></span>요청 중…</span>
         </button>
         <div class="row__detail" id="{{ r.dom_id }}" aria-live="polite"></div>
+        {% else %}
+        {# 상세 기록 조회가 연결되지 않은 검색: 열 머리와 폭을 맞추는 빈 칸만 둔다 #}
+        <span class="row__action"></span>
+        {% endif %}
       </li>
       {% else %}
       <li class="row row--none">표시할 기록이 없습니다.</li>
@@ -132,7 +141,9 @@
   <div class="sheet__foot">
     {{ disclaimer() }}
     <p class="footnote">
-      {% if meta.backend.encrypted %}
+      {% if heart_fields %}
+      상세 기록 조회는 아직 연결되지 않았습니다.
+      {% elif meta.backend.encrypted %}
       상세 기록을 요청하면 열람 권한을 확인하고 접근 기록을 남깁니다.
       {% else %}
       상세 기록을 요청하면 예시 계정의 열람 권한을 모의 확인하고 로컬에 요청을 기록합니다.
@@ -141,6 +152,7 @@
   </div>
 </div>
 
+{% if result.pipeline %}
 <details class="process">
   <summary class="process__title">검색 과정</summary>
   <div class="process__body">
@@ -172,6 +184,7 @@
     <p class="process__total">측정된 단계 합계 <span class="process__value">{{ result.timing.total_text }}</span></p>
   </div>
 </details>
+{% endif %}
 
 
 {% else %}

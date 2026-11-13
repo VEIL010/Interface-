@@ -1,0 +1,349 @@
+{#- 시안 B · 암호 파이프라인 — 동적 영역(세 레인).
+    단독으로도 렌더링되므로 extends 하지 않고, page.html 의 변수에 기대지 않는다.
+    단계 상태는 result.pipeline 이 보고한 값만 그린다. 검색 전에는 meta.stages 로 구조만 보여 준다. -#}
+
+{%- set stages = result.pipeline if result else meta.stages -%}
+{%- set ns = namespace(phase=0, pre=[], srv=[], post=[], enc=none, match=none) -%}
+{%- for s in stages -%}
+  {%- if s.actor == 'server' -%}
+    {%- set ns.phase = 1 -%}{%- set ns.srv = ns.srv + [(loop.index, s)] -%}
+  {%- elif ns.phase == 0 -%}
+    {%- set ns.pre = ns.pre + [(loop.index, s)] -%}
+  {%- else -%}
+    {%- set ns.post = ns.post + [(loop.index, s)] -%}
+  {%- endif -%}
+  {%- if s.key == 'encrypt' -%}{%- set ns.enc = s -%}{%- endif -%}
+  {%- if s.key == 'match' -%}{%- set ns.match = s -%}{%- endif -%}
+{%- endfor -%}
+{%- set enc_st = (ns.enc.status if ns.enc else none) or 'idle' -%}
+
+{#- 흐름선의 상태: 그 선에 실린 데이터를 만든 단계가 실제로 실행(done)됐을 때만 색이 켜진다 -#}
+{%- macro wire(s, kind) -%}
+{%- if not result -%}idle{%- elif s and s.status == 'done' -%}{{ kind }}{%- else -%}off{%- endif -%}
+{%- endmacro -%}
+{%- set w = namespace(v='idle') -%}
+
+{%- macro mark(st) -%}
+<span class="mark mark--{{ st }}" aria-hidden="true"></span>
+{%- endmacro -%}
+
+{#- 단계 카드: 번호 · 이름 · 설명 · 상태 · 측정 시간 -#}
+{%- macro stage_card(n, s, win) -%}
+{%- set st = s.status or 'idle' -%}
+<li class="flow__item flow__item--stage w-{{ win }}">
+  <div class="stage stage--{{ st }}">
+    <span class="stage__n" aria-hidden="true">{{ '%02d'|format(n) }}</span>
+    <h4 class="stage__label">{{ s.label }}</h4>
+    <p class="stage__status">{{ mark(st) }}<span class="sr">상태 </span>{{ s.status_label or '대기' }}</p>
+    <p class="stage__detail">{{ s.detail }}</p>
+    {%- if result %}
+    <p class="stage__ms">{% if s.ms_text %}<span class="sr">측정 시간 </span>{{ s.ms_text }}{% else %}측정 없음{% endif %}</p>
+    {%- endif %}
+  </div>
+</li>
+{%- endmacro -%}
+
+{#- 경계를 넘는 것: 이름 + (검색 뒤에는) 그 단계가 보고한 상태 -#}
+{%- macro crossing(payload, stage, dir) -%}
+{%- set st = (stage.status if stage else none) or 'idle' -%}
+<span class="cross cross--{{ st }}">
+  <span class="cross__chip"><span class="sr">경계를 넘는 데이터 </span>{{ payload }}</span>
+  {%- if stage and stage.status %}
+  <span class="cross__status">{{ mark(st) }}{{ stage.status_label }}</span>
+  {%- endif %}
+  <svg class="ico cross__arrow" viewBox="0 0 16 16" aria-hidden="true">
+    {%- if dir == 'right' %}<path d="M3 8h10M9 4l4 4-4 4"/>{% else %}<path d="M8 3v10M4 9l4 4 4-4"/>{% endif -%}
+  </svg>
+</span>
+{%- endmacro -%}
+
+{#- 신뢰 경계: 세로형(레인이 나란할 때)과 가로형(레인이 쌓일 때)을 둘 다 두고 폭 계산으로 하나만 보인다 -#}
+{%- macro boundary(payload, stage) -%}
+<div class="boundary boundary--v" aria-hidden="true">
+  <div class="boundary__body">
+    <span class="boundary__label">신뢰 경계</span>
+    {{ crossing(payload, stage, 'right') }}
+  </div>
+</div>
+<div class="boundary boundary--h">
+  <div class="boundary__body">
+    {{ crossing(payload, stage, 'down') }}
+    <span class="boundary__label">신뢰 경계</span>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro keybox(actor) -%}
+{%- for h in meta.key_holders if h.actor == actor %}
+<div class="keys">
+  <p class="keys__head"><span class="keys__cap">{% if not meta.backend.encrypted %}설계상 {% endif %}보유 키</span><span class="keys__who">{{ h.label }}</span></p>
+  {%- if h.holds %}
+  <ul class="keys__list">
+    {%- for k in h.holds %}
+    <li class="key"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="11" r="2.75"/><path d="M7 9l6.5-6.5M11 5l2 2M9.25 6.75l1.5 1.5"/></svg>{{ k }}</li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+  <p class="keys__note">{{ h.note }}</p>
+</div>
+{%- endfor %}
+{%- endmacro -%}
+
+<div class="runbar">
+  <h2 class="runbar__title" id="run-title">검색 과정</h2>
+  {%- if result %}
+  <p class="runbar__meta">방식 <b>{{ result.method_label }}</b><span aria-hidden="true"> · </span>{% if result.backend.encrypted %}측정된 단계 합계{% else %}평문 처리 단계 합계{% endif %} <b>{{ result.timing.total_text }}</b></p>
+  <ul class="tally" aria-label="단계 상태 요약">
+    {%- for st in ['done', 'substituted', 'not_connected'] %}
+    {%- set group = result.pipeline|selectattr('status', 'equalto', st)|list %}
+    {%- if group %}
+    <li class="tally__item">{{ mark(st) }}{{ group[0].status_label }} <b>{{ group|length }}</b></li>
+    {%- endif %}
+    {%- endfor %}
+    <li class="tally__item tally__item--wire"><span class="wkey wkey--on" aria-hidden="true"></span>실제로 흐름<span class="wkey wkey--off" aria-hidden="true"></span>흐르지 않음</li>
+  </ul>
+  {%- else %}
+  <p class="runbar__meta">{% if error %}검색이 실행되지 않았습니다{% else %}검색을 실행하면 단계별 상태가 표시됩니다.{% endif %}</p>
+  <ul class="tally" aria-label="단계 상태 요약">
+    <li class="tally__item">{{ mark('idle') }}대기 <b>{{ meta.stages|length }}</b></li>
+  </ul>
+  {%- endif %}
+</div>
+
+{% if result and result.results %}
+<div class="run-summary">
+  <p><strong>유사 기록 Top-{{ result.top_k }}</strong><span>1위 <b>{{ result.results[0].record_id }}</b></span><span>유사도 <b>{{ result.results[0].score_text }}</b></span></p>
+  <a href="#b-top-results">결과 목록으로 이동</a>
+</div>
+{% endif %}
+
+{% if error -%}
+<div class="alert" role="alert" data-bm-invalid="{{ error.fields|join(',') }}">
+  <svg class="ico alert__ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.25l6.25 11H1.75z"/><path d="M8 6.5v3.25M8 11.6v.2"/></svg>
+  <div class="alert__body">
+    <p class="alert__msg">{{ error.message }}</p>
+    {%- if error.fields %}
+    <ul class="alert__fields">
+      {%- for f in meta.features if f.key in error.fields %}
+      <li><span class="alert__label">{{ f.label }}</span><span class="alert__text">{{ error.fields[f.key] }}</span></li>
+      {%- endfor %}
+      {%- if 'top_k' in error.fields %}
+      <li><span class="alert__label">결과 개수 (Top-K)</span><span class="alert__text">{{ error.fields['top_k'] }}</span></li>
+      {%- endif %}
+      {%- if 'method' in error.fields %}
+      <li><span class="alert__label">방식</span><span class="alert__text">{{ error.fields['method'] }}</span></li>
+      {%- endif %}
+    </ul>
+    {%- endif %}
+  </div>
+</div>
+{%- endif %}
+
+<div class="lanes"{% if result and result.results %} data-b-summary="검색 완료. 유사 기록 Top-{{ result.top_k }}, 1위 {{ result.results[0].record_id }} 유사도 {{ result.results[0].score_text }}."{% endif %}>
+
+  {# ── 레인 1 · 클라이언트: 입력·암호화 ── #}
+  <section class="lane lane--client" aria-labelledby="lane-in-title">
+    <div class="lane__in">
+      <h3 class="lane__head" id="lane-in-title">
+        <span class="sw sw--plain" aria-hidden="true"></span>
+        <span class="lane__actor">CLIENT · 의료기관</span>
+        <span class="lane__role">입력·암호화</span>
+      </h3>
+
+      {%- set w.v = 'plain' if result else 'idle' %}
+      <ol class="flow">
+        <li class="flow__item flow__item--node w-{{ w.v }}">
+          <div class="node node--{{ 'plain' if result else 'idle' }}">
+            <span class="node__token" aria-hidden="true"></span>
+            <div class="node__head">
+              <h4 class="node__title">질의 입력값</h4>
+              <span class="node__kind node__kind--plain">평문</span>
+            </div>
+            <dl class="pairs">
+              {%- if result %}
+              {%- for i in result.query.inputs %}
+              <div class="pair"><dt>{{ i.label }}</dt><dd><span class="num">{{ i.value }}</span> <span class="unit">{{ i.unit }}</span></dd></div>
+              {%- endfor %}
+              {%- else %}
+              {%- for f in meta.features %}
+              <div class="pair pair--idle"><dt>{{ f.label }}</dt><dd><span class="num" aria-hidden="true">—</span><span class="sr">검색 전</span> <span class="unit">{{ f.unit }}</span></dd></div>
+              {%- endfor %}
+              {%- endif %}
+            </dl>
+          </div>
+        </li>
+        {%- for n, s in ns.pre %}
+        {{ stage_card(n, s, w.v) }}
+        {%- set w.v = wire(s, 'cipher' if s.key == 'encrypt' else 'plain')|trim %}
+        {%- if s.key == 'preprocess' %}
+        <li class="flow__item flow__item--node w-{{ w.v }}">
+          <div class="node node--{{ 'plain' if w.v == 'plain' else ('idle' if w.v == 'idle' else 'void') }}">
+            <span class="node__token" aria-hidden="true"></span>
+            <div class="node__head">
+              <h4 class="node__title">질의 벡터 q</h4>
+              <span class="node__kind">L2 정규화 · {{ result.query.dim if result else meta.dataset.feature_dim }}차원</span>
+            </div>
+            {%- if result %}
+            <ol class="vec{% if w.v != 'plain' %} vec--off{% endif %}" aria-label="L2 정규화된 질의 벡터 (평문)">
+              {%- for x in result.query.vector_text %}
+              <li class="vec__cell">{{ x }}</li>
+              {%- endfor %}
+            </ol>
+            {%- else %}
+            <ol class="vec vec--idle" aria-label="검색 전 · 벡터 없음">
+              {%- for f in meta.features %}
+              <li class="vec__cell" aria-hidden="true"></li>
+              {%- endfor %}
+            </ol>
+            {%- endif %}
+          </div>
+        </li>
+        {%- endif %}
+        {%- endfor %}
+      </ol>
+
+      {{ keybox('client') }}
+    </div>
+  </section>
+
+  {{ boundary('Enc(q)', ns.enc) }}
+
+  {# ── 레인 2 · 서버: 암호문 연산 ── #}
+  <section class="lane lane--server" aria-labelledby="lane-srv-title">
+    <div class="lane__in">
+      <h3 class="lane__head" id="lane-srv-title">
+        <span class="sw sw--cipher" aria-hidden="true"></span>
+        <span class="lane__actor">SERVER</span>
+        <span class="lane__role">암호문 연산</span>
+      </h3>
+
+      {%- set w.v = wire(ns.enc, 'cipher')|trim %}
+      <ol class="flow">
+        <li class="flow__item flow__item--node w-{{ w.v }}">
+          <div class="node node--{{ 'cipher' if enc_st == 'done' else ('idle' if enc_st == 'idle' else 'void') }}">
+            <span class="node__token" aria-hidden="true"></span>
+            <div class="node__head">
+              <h4 class="node__title">{% if meta.backend.encrypted %}서버가 보는 것{% else %}서버의 데이터 처리{% endif %}</h4>
+            </div>
+
+            <div class="seen">
+              <p class="seen__what">질의</p>
+              {%- if enc_st == 'done' %}
+              <div class="blob blob--cipher" role="img" aria-label="읽을 수 없는 암호문 블록"></div>
+              <p class="seen__cap"><span class="sw sw--cipher" aria-hidden="true"></span><span><b>Enc(q)</b> · 암호문. 서버에는 복호화할 Secret Key가 없습니다.</span></p>
+              {%- elif enc_st == 'idle' %}
+              <div class="blob blob--idle"><span>Enc(q)</span></div>
+              <p class="seen__cap">{{ mark('idle') }}<span>{% if meta.backend.encrypted %}검색 전 · 아직 넘어온 것이 없습니다.{% else %}목표 구조의 질의 암호문 · 검색 대기 중{% endif %}</span></p>
+              {%- else %}
+              <div class="blob blob--{{ enc_st }}"><span>Enc(q)</span></div>
+              <p class="seen__cap">{{ mark(enc_st) }}<span>암호문 없음 · {{ ns.enc.label }} 단계 {{ ns.enc.status_label }}</span></p>
+              {%- endif %}
+            </div>
+
+            <div class="seen">
+              <p class="seen__what">등록 DB</p>
+              {%- if meta.backend.encrypted %}
+              <div class="blob blob--cipher blob--tall" role="img" aria-label="읽을 수 없는 암호문 블록"></div>
+              <p class="seen__cap"><span class="sw sw--cipher" aria-hidden="true"></span><span><b>암호화된 의료 DB</b> · {{ meta.dataset.records }}건 · {{ meta.dataset.label }}</span></p>
+              {%- else %}
+              <div class="blob blob--not_connected"><span>{{ meta.dataset.label }} · {{ meta.dataset.records }}건</span></div>
+              <p class="seen__cap">{{ mark('not_connected') }}<span>암호화 전 · 평문 그대로 비교합니다 (mock)</span></p>
+              {%- endif %}
+            </div>
+          </div>
+        </li>
+        {%- for n, s in ns.srv %}
+        {{ stage_card(n, s, w.v) }}
+        {%- set w.v = wire(s, 'cipher')|trim %}
+        {%- endfor %}
+      </ol>
+
+      {{ keybox('server') }}
+    </div>
+  </section>
+
+  {{ boundary('Enc(점수)', ns.match) }}
+
+  {# ── 레인 3 · 클라이언트: 복호화·결과 ── #}
+  <section class="lane lane--client" aria-labelledby="lane-out-title">
+    <div class="lane__in">
+      <h3 class="lane__head" id="lane-out-title">
+        <span class="sw sw--plain" aria-hidden="true"></span>
+        <span class="lane__actor">CLIENT · 의료기관</span>
+        <span class="lane__role">복호화·결과</span>
+      </h3>
+
+      {%- set w.v = wire(ns.match, 'cipher')|trim %}
+      <ol class="flow">
+        {%- for n, s in ns.post %}
+        {{ stage_card(n, s, w.v) }}
+        {%- set w.v = wire(s, 'plain')|trim %}
+        {%- endfor %}
+
+        <li class="flow__item flow__item--out w-{{ w.v }}">
+          {%- if result %}
+          <div class="out">
+            <div class="out__head">
+              <span class="node__token node__token--plain" aria-hidden="true"></span>
+              <h4 class="out__title" id="b-top-results" tabindex="-1">유사 기록 Top-{{ result.top_k }}</h4>
+              {%- if not result.backend.encrypted %}
+              <span class="tag tag--mock">{{ result.backend.label }}</span>
+              {%- endif %}
+              <p class="out__sub">등록 기록 {{ result.searched }}건과 비교</p>
+            </div>
+
+            <div class="hits__cols" aria-hidden="true">
+              <span>순위</span><span>기록 ID</span><span class="hits__col-score">유사도</span><span></span>
+            </div>
+            <ol class="hits">
+              {%- for r in result.results %}
+              <li class="hit">
+                <div class="hit__row">
+                  <span class="hit__rank"><span class="sr">순위 </span>{{ r.rank }}</span>
+                  <span class="hit__id"><span class="sr">기록 ID </span>{{ r.record_id }}</span>
+                  <span class="hit__score"><span class="sr">유사도 </span>{{ r.score_text }}</span>
+                  <button class="hit__req" type="button" data-bm-access="{{ r.access_url }}" data-bm-target="#{{ r.dom_id }}" aria-label="{{ r.record_id }} 상세 기록 요청">
+                    <span class="hit__req-idle">상세 기록 요청</span>
+                    <span class="hit__req-busy" aria-hidden="true">요청 중…</span>
+                  </button>
+                </div>
+                <div class="hit__bar" aria-hidden="true"><span style="width: {{ r.bar_pct }}%"></span></div>
+                <div class="hit__detail" id="{{ r.dom_id }}" aria-live="polite"></div>
+              </li>
+              {%- endfor %}
+            </ol>
+          </div>
+          {%- else %}
+          <div class="out out--idle">
+            <div class="out__head">
+              <span class="node__token node__token--idle" aria-hidden="true"></span>
+              <h4 class="out__title">유사 기록 Top-K</h4>
+            </div>
+            <p class="out__empty">
+              {%- if error -%}
+              검색이 실행되지 않았습니다.{% if error.fields %} 입력값을 고친 뒤 다시 실행해 주세요.{% endif %}
+              {%- else -%}
+              환자 정보를 입력하고 검색하면 가장 유사한 기록이 여기에 표시됩니다.
+              {%- endif -%}
+            </p>
+          </div>
+          {%- endif %}
+          <p class="disclaimer">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v4M8 4.9v.2"/></svg>
+            <span>{{ meta.disclaimer }}</span>
+          </p>
+        </li>
+      </ol>
+
+      {%- for h in meta.key_holders if h.actor == 'access' %}
+      <div class="keys keys--access">
+        <p class="keys__head"><span class="keys__cap">별도 경로</span><span class="keys__who">{{ h.label }}</span></p>
+        <p class="keys__note">{% if meta.backend.encrypted %}{{ h.note }}{% else %}목표 구조 · {{ h.note }}{% endif %}</p>
+        <p class="keys__note">{% if meta.backend.encrypted %}기록 ID로 상세 내용을 요청하면 권한을 확인하고 접근 기록을 남깁니다.{% else %}기록 ID로 상세 내용을 요청하면 합성 기록의 열람 허용·거부를 모의 확인하고 데모 접근 내역을 표시합니다.{% endif %}</p>
+        <p class="keys__req"><span class="keys__cap">{% if not meta.backend.encrypted %}데모 {% endif %}요청자</span>{{ meta.requester.label }} <span class="keys__id">({{ meta.requester.id }})</span></p>
+      </div>
+      {%- endfor %}
+    </div>
+  </section>
+
+</div>

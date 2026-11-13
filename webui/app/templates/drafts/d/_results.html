@@ -1,0 +1,250 @@
+{# 시안 D · 동적 영역 (02 결과 · 03 단계별 시간 · 04 방식 비교)
+   result / error / 빈 상태 모두 같은 뼈대를 그린다. 측정하지 않은 칸은 "측정 전",
+   실행했지만 값이 없는 칸은 "—" 로 적는다. 단계 상태는 result.pipeline 만 따른다. #}
+{% set top_k = result.top_k if result else form.top_k %}
+{% set stages = result.pipeline if result else meta.stages %}
+
+{% if error %}
+<div class="alert" role="alert" tabindex="-1" data-bm-invalid="{{ error.fields|join(',') }}">
+  <p class="alert__title">
+    <svg class="alert__ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" aria-hidden="true"><path d="M3 3h18v18H3zM12 7v7M12 17v.5"/></svg>
+    <span>{{ error.message }}</span>
+  </p>
+  {% if error.fields %}
+  <ul class="alert__list">
+    {% for f in meta.features %}{% if error.fields[f.key] %}
+    <li id="err-{{ f.key }}"><a class="alert__field" href="#f-{{ f.key }}">{{ f.label }}</a><span>{{ error.fields[f.key] }}</span></li>
+    {% endif %}{% endfor %}
+    {% if error.fields.top_k %}<li><span class="alert__field">결과 개수 (Top-K)</span><span>{{ error.fields.top_k }}</span></li>{% endif %}
+    {% if error.fields.method %}<li><span class="alert__field">방식</span><span>{{ error.fields.method }}</span></li>{% endif %}
+  </ul>
+  {% endif %}
+  <p class="alert__note">측정을 실행하지 않았습니다. 아래 표는 측정 전 상태입니다.</p>
+</div>
+{% endif %}
+
+{# ── 02 결과 ── #}
+<section class="blk" aria-labelledby="h-result">
+  <header class="head">
+    <span class="head__no" aria-hidden="true">02</span>
+    <h2 class="head__title" id="h-result">유사 기록 Top-{{ top_k }}</h2>
+    <p class="head__sub">{% if result %}등록 기록 {{ result.searched }}건과 비교{% else %}측정 전{% endif %}</p>
+    <span class="head__en" aria-hidden="true">Results</span>
+  </header>
+
+  <dl class="runline">
+    <div class="runline__cell">
+      <dt>방식</dt>
+      <dd>{% if result %}{{ result.method_label }}{% else %}<span class="pending">측정 전</span>{% endif %}</dd>
+    </div>
+    <div class="runline__cell">
+      <dt>입력</dt>
+      <dd>{% if result %}{% for q in result.query.inputs %}<span class="runline__in">{{ q.label }} <b>{{ q.value }}</b> {{ q.unit }}</span>{% endfor %}{% else %}<span class="pending">측정 전</span>{% endif %}</dd>
+    </div>
+    <div class="runline__cell">
+      <dt>질의 벡터 · L2 정규화</dt>
+      <dd>{% if result %}<span class="vec">[ {% for x in result.query.vector_text %}<span class="vec__x">{{ x }}{% if not loop.last %},{% endif %}</span> {% endfor %}]</span>{% else %}<span class="pending">측정 전</span>{% endif %}</dd>
+    </div>
+  </dl>
+
+  <div class="scroll">
+    <table class="tbl tbl--result">
+      <caption class="vh">유사 기록 Top-{{ top_k }}: 순위, 기록 ID, 유사도, 상세 기록 요청</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="c-rank">순위</th>
+          <th scope="col" class="c-id">기록 ID</th>
+          <th scope="col" class="c-score">
+            <div class="score">
+              <span class="score__num">유사도</span>
+              <span class="axis" aria-hidden="true"><span>0</span><span>1</span></span>
+            </div>
+          </th>
+          <th scope="col" class="c-act">상세</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if result %}
+        {% for r in result.results %}
+        <tr class="res">
+          <td class="c-rank"><span aria-hidden="true">{{ '%02d'|format(r.rank) }}</span><span class="vh">{{ r.rank }}위</span></td>
+          <th scope="row" class="c-id">{{ r.record_id }}</th>
+          <td class="c-score">
+            <div class="score">
+              <span class="score__num">{{ r.score_text }}</span>
+              <span class="bar" aria-hidden="true"><span class="bar__fill" style="width: {{ r.bar_pct }}%"></span></span>
+            </div>
+          </td>
+          <td class="c-act">
+            <button class="btn" type="button" data-bm-access="{{ r.access_url }}" data-bm-target="#{{ r.dom_id }}">
+              <span class="swap">
+                <span class="swap__idle"><span class="vh">{{ r.record_id }} </span>상세 기록 요청</span>
+                <span class="swap__busy">요청 중…</span>
+              </span>
+            </button>
+          </td>
+        </tr>
+        <tr class="rec">
+          <td colspan="4"><div class="rec__slot" id="{{ r.dom_id }}" aria-live="polite"></div></td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr class="res res--empty">
+          <td colspan="4">
+            <div class="empty">
+              <span class="pending">측정 전</span>
+              <p class="empty__text">환자 정보를 입력하고 측정을 실행하면 가장 유사한 기록이 여기에 표시됩니다.</p>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="notes">
+    <p class="note"><b class="note__k">주의</b><span>{{ meta.disclaimer }}</span></p>
+    <p class="note"><b class="note__k">상세 기록</b><span>검색 결과에 포함되지 않습니다. 기록 접근 제어에 따로 요청하면 요청자 {{ meta.requester.label }} ({{ meta.requester.id }})의 ID 권한을 확인하고 접근 기록을 남깁니다.</span></p>
+  </div>
+</section>
+
+<div class="pair">
+
+  {# ── 03 단계별 시간 ── #}
+  <section class="blk blk--stages" aria-labelledby="h-stages">
+    <header class="head">
+      <span class="head__no" aria-hidden="true">03</span>
+      <h2 class="head__title" id="h-stages">단계별 시간</h2>
+      <p class="head__sub">검색 과정 {{ stages|length }}단계</p>
+      <span class="head__en" aria-hidden="true">Stages</span>
+    </header>
+
+    <div class="scroll" tabindex="0" role="region" aria-labelledby="h-stages">
+      <table class="tbl tbl--stage">
+        <thead>
+          <tr>
+            <th scope="col">단계</th>
+            <th scope="col">수행 위치</th>
+            <th scope="col">상태</th>
+            <th scope="col" class="t-r">시간</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in stages %}
+          <tr>
+            <th scope="row" class="c-stage">
+              <div class="stage">
+                <span class="stage__no" aria-hidden="true">{{ loop.index }}</span>
+                <span class="stage__label">{{ s.label }}</span>
+                <span class="stage__detail">{{ s.detail }}</span>
+              </div>
+            </th>
+            <td class="c-actor">{{ s.actor_label }}</td>
+            <td class="c-status">
+              {% if result %}
+              <span class="st st--{{ s.status }}"><span class="st__mark" aria-hidden="true"></span>{{ s.status_label }}</span>
+              {% else %}
+              <span class="st st--pending"><span class="st__mark" aria-hidden="true"></span>측정 전</span>
+              {% endif %}
+            </td>
+            <td class="c-time t-r">
+              {% if result and s.ms_text %}
+              <div class="time">
+                <span class="tbar" aria-hidden="true"><span class="tbar__fill" style="width: {{ '%.1f'|format(s.ms / result.timing.total_ms * 100 if result.timing.total_ms > 0 else 0) }}%"></span></span>
+                <span class="time__num">{{ s.ms_text }}</span>
+              </div>
+              {% elif result %}
+              <span class="none" aria-hidden="true">—</span><span class="vh">측정값 없음</span>
+              {% else %}
+              <span class="pending">측정 전</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3" class="total__k">
+              <span class="total__label">측정 합계</span>
+              <span class="total__note">{% if result %}이 서버에서 실제로 측정된 단계의 합 · 방식 {{ result.method_label }}{% else %}아직 측정한 단계가 없습니다{% endif %}</span>
+            </th>
+            <td class="total__v t-r">
+              {% if result and result.timing.total_text %}
+              {% set tt = result.timing.total_text.split(' ') %}
+              <span class="total__num">{{ tt[0] }}</span>{% if tt|length > 1 %}<span class="unit">{{ tt[1:]|join(' ') }}</span>{% endif %}
+              {% else %}
+              <span class="pending">측정 전</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <ul class="key">
+      <li><span class="st st--done"><span class="st__mark" aria-hidden="true"></span>완료</span> 실제로 실행</li>
+      <li><span class="st st--substituted"><span class="st__mark" aria-hidden="true"></span>평문 대체</span> HE 단계 대신 평문으로 계산</li>
+      <li><span class="st st--not_connected"><span class="st__mark" aria-hidden="true"></span>미연결</span> 아직 연결되지 않음</li>
+      <li><span class="key__bar" aria-hidden="true"></span>막대는 측정 합계에서 차지하는 비중</li>
+      <li><span class="key__dash" aria-hidden="true">—</span>측정값 없음</li>
+    </ul>
+  </section>
+
+  {# ── 04 방식 비교 ── #}
+  <section class="blk blk--methods" aria-labelledby="h-methods">
+    <header class="head">
+      <span class="head__no" aria-hidden="true">04</span>
+      <h2 class="head__title" id="h-methods">방식 비교</h2>
+      <p class="head__sub">방식 {{ meta.methods|length }}개 · 지표 {{ meta.metrics|length }}개</p>
+      <span class="head__en" aria-hidden="true">Methods</span>
+    </header>
+
+    <div class="scroll" tabindex="0" role="region" aria-labelledby="h-methods">
+      <table class="tbl tbl--methods">
+        <thead>
+          <tr>
+            <th scope="col">방식</th>
+            {% for metric in meta.metrics %}
+            <th scope="col" class="t-r">{{ metric }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in meta.methods %}
+          {% set ran = result and result.method == m.key %}
+          <tr{% if ran %} class="is-ran"{% endif %}>
+            <th scope="row" class="c-method">
+              <div class="mrow">
+                <span class="mrow__mark" aria-hidden="true"></span>
+                <span class="mrow__name">{{ m.label }}</span>
+                <span class="mrow__role">{{ m.role }}</span>
+                {% if ran %}<span class="tag tag--on">이번 실행</span>{% elif not m.available %}<span class="tag">미구현</span>{% endif %}
+              </div>
+            </th>
+            {% for metric in meta.metrics %}
+            <td class="t-r">
+              {% if ran and metric == '시간' %}
+              <span class="v">{{ result.timing.total_text }}</span>
+              {% elif ran and metric == 'Top-K 일치율' and m.key == 'plaintext' %}
+              <span class="v">기준</span>
+              {% elif ran %}
+              <span class="none" aria-hidden="true">—</span><span class="vh">측정값 없음</span>
+              {% else %}
+              <span class="pending">측정 전</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="key">
+      <li><b>기준</b> Top-K 일치율을 계산할 때 비교 기준이 되는 방식</li>
+      <li><span class="key__dash" aria-hidden="true">—</span>이번 실행에서 측정하지 않은 지표</li>
+      <li><b>측정 전</b> 아직 실행하지 않은 방식</li>
+    </ul>
+  </section>
+
+</div>

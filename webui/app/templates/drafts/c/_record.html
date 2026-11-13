@@ -1,0 +1,46 @@
+{#- 시안 C · 단계형 가이드 — 상세 기록 조각.
+    결과 카드 안(.card__detail)에 끼워진다. 허용 · 거절 · 없는 기록 세 가지 상태.
+    접근 기록 문구는 access.logged_at_text 가 있을 때만 "남았어요"라고 말한다. -#}
+{%- set state = 'granted' if access.granted else ('denied' if access.found else 'missing') -%}
+<div class="record record--{{ state }}">
+  <p class="record__status">
+    {%- if state == 'granted' %}
+    <span class="tag tag--done">
+      <svg class="tag__glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="7" fill="currentColor"/><path class="tag__cut" d="M4.8 8.3l2.2 2.2 4.2-4.7"/></svg>권한 확인됨
+    </span>
+    {%- elif state == 'denied' %}
+    <span class="tag tag--denied">
+      <svg class="tag__glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect class="tag__ring" x="3" y="7" width="10" height="7" rx="1.75"/><path class="tag__ring" d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7"/></svg>열람 권한 없음
+    </span>
+    {%- else %}
+    <span class="tag tag--not_connected">
+      <svg class="tag__glyph" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle class="tag__ring tag__ring--dashed" cx="8" cy="8" r="6.25"/></svg>기록 없음
+    </span>
+    {%- endif %}
+    <span class="vh">기록 ID {{ access.record_id }}</span>
+  </p>
+
+  {%- if access.reason %}
+  <p class="record__reason">{{ access.reason }}</p>
+  {%- endif %}
+
+  {%- if access.granted and access.fields %}
+  <dl class="record__fields">
+    {%- for f in access.fields %}
+    <div class="record__field">
+      <dt>{{ f.label }}</dt>
+      <dd>{{ f.value }}<span class="record__unit">{{ f.unit }}</span></dd>
+    </div>
+    {%- endfor %}
+  </dl>
+  {%- endif %}
+
+  <div class="record__log">
+    {%- if access.logged_at_text %}
+    <p class="record__logged">{% if access.granted %}이 요청은 접근 기록에 남았어요.{% else %}이 요청도 접근 기록에 남았어요.{% endif %}</p>
+    <p class="record__meta"><span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span><span>{{ access.logged_at_text }}</span><span>접근 기록 {{ access.log_count }}번째 요청</span></p>
+    {%- else %}
+    <p class="record__logged">이 요청은 접근 기록에 남지 않았어요.</p>
+    {%- endif %}
+  </div>
+</div>

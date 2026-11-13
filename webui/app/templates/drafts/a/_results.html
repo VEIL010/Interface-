@@ -1,0 +1,205 @@
+{#
+  시안 A · 결과 영역 조각
+  page.html 에 include 되고, POST …/search 의 응답으로 단독 렌더링된다.
+  상태는 셋이다: error(검색하지 못함) · result(결과) · 둘 다 없음(검색 전).
+  단계 상태와 시간은 result.pipeline 이 알려 주는 값만 그린다.
+#}
+
+{%- macro status_glyph(status) -%}
+  {#- 색만으로 구분하지 않도록 상태마다 모양이 다르다: 꽉 찬 원 · 반만 찬 원 · 점선 원 -#}
+  {%- if status == 'done' -%}
+  <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path class="glyph__mark" d="M3.4 6.2 5.2 8 8.6 4.3" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  {%- elif status == 'substituted' -%}
+  <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 .75a5.25 5.25 0 0 0 0 10.5z" fill="currentColor"/></svg>
+  {%- else -%}
+  <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.1 2.02"/></svg>
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro ticks() -%}
+  {#- 측정선 눈금: 0.1 마다 짧게, 0 · 0.5 · 1.0 은 길게 -#}
+  {%- for t in range(11) -%}
+  <span class="meter__tick{% if t % 5 == 0 %} meter__tick--major{% endif %}" style="--t: {{ t }}"></span>
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro columns() -%}
+  {#- 목록의 열 머리. 유사도 눈금(0 · 0.5 · 1.0)이 각 행의 측정선 눈금과 같은 자리에 온다 -#}
+  <div class="rank__cols" aria-hidden="true">
+    <div class="row__main">
+      <span class="row__rank">순위</span>
+      <span class="row__id">기록 ID</span>
+      <span class="scale"><span>0</span><span>0.5</span><span>1.0</span></span>
+      <span class="row__score">유사도</span>
+    </div>
+    <span class="row__action"></span>
+  </div>
+{%- endmacro -%}
+
+{%- macro disclaimer() -%}
+  <p class="footnote">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.5v3.75M8 4.75v.15"/></svg>
+    <span>{{ meta.disclaimer }}</span>
+  </p>
+{%- endmacro -%}
+
+
+{% if error %}
+{# ── 검색하지 못함: 입력 오류(422) 또는 미연결 방식(501) ─────────── #}
+<div class="panel sheet sheet--error" role="alert" data-bm-invalid="{{ error.fields|join(',') }}">
+  <div class="sheet__head sheet__head--alert">
+    <svg class="sheet__alert" width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75v3.75M8 11.1v.15"/></svg>
+    <div class="sheet__titles">
+      <h2 class="sheet__title">검색하지 못했습니다</h2>
+      <p class="sheet__sub">{{ error.message }}</p>
+    </div>
+  </div>
+
+  {% if error.fields %}
+  {% set other_labels = {'top_k': '결과 개수 (Top-K)', 'method': '계산 방식'} %}
+  <ul class="errors">
+    {% for key, message in error.fields.items() %}
+    {% set feature = meta.features|selectattr('key', 'equalto', key)|first %}
+    <li class="errors__item">
+      <span class="errors__label">{{ feature.label if feature else other_labels.get(key, key) }}</span>
+      <span class="errors__msg" data-error-for="{{ key }}">{{ message }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+
+{% elif result %}
+{# ── 결과 ─────────────────────────────────────────────────────── #}
+<div class="panel sheet" data-query='{{ result.query.inputs|tojson }}' data-top-k="{{ result.top_k }}"
+     {% if result.results %}data-summary="검색 완료. 유사 기록 {{ result.results|length }}건, 1위 {{ result.results[0].record_id }}, 유사도 {{ result.results[0].score_text }}."{% endif %}>
+  <div class="sheet__head">
+    <div class="sheet__titles">
+      <h2 class="sheet__title">유사 기록 Top-{{ result.top_k }}</h2>
+      <p class="sheet__sub">{% if initial_example %}예시 검색 · {% endif %}등록 기록 {{ result.searched }}건과 비교</p>
+    </div>
+
+    {# 입력란을 고친 뒤에도 이 결과가 어떤 값으로 검색한 것인지 알 수 있게 한다 #}
+    <div class="echo">
+      <span class="echo__cap">검색한 값</span>
+      <dl class="echo__list">
+        {% for i in result.query.inputs %}
+        <div class="echo__item">
+          <dt>{{ i.label }}</dt>
+          <dd>{{ i.value }} <span class="echo__unit">{{ i.unit }}</span></dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+
+  {# --id-ch: 가장 긴 기록 ID의 글자 수. ID 열 폭을 열 머리와 모든 행에서 똑같이 맞추는 데 쓴다 #}
+  <div class="rank" style="--id-ch: {{ result.results|map(attribute='record_id')|map('length')|max|default(4, true) }}">
+    {{ columns() }}
+    <ol class="rank__list" role="list">
+      {% for r in result.results %}
+      <li class="row">
+        <div class="row__main">
+          <span class="row__rank"><span class="sr">순위 </span>{{ r.rank }}</span>
+          <span class="row__id"><span class="sr">기록 ID </span>{{ r.record_id }}</span>
+          <span class="meter" aria-hidden="true">
+            <span class="meter__track"><span class="meter__fill" style="width: {{ r.bar_pct }}%"></span></span>
+            {{ ticks() }}
+          </span>
+          <span class="row__score"><span class="sr">유사도 </span>{{ r.score_text }}</span>
+        </div>
+        <button class="btn btn--quiet row__action" type="button" data-bm-access="{{ r.access_url }}" data-bm-target="#{{ r.dom_id }}">
+          <span class="btn__label"><span class="sr">{{ r.record_id }} </span>상세 기록 요청</span>
+          <span class="btn__busy" aria-hidden="true"><span class="spinner"></span>요청 중…</span>
+        </button>
+        <div class="row__detail" id="{{ r.dom_id }}" aria-live="polite"></div>
+      </li>
+      {% else %}
+      <li class="row row--none">표시할 기록이 없습니다.</li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div class="sheet__foot">
+    {{ disclaimer() }}
+    <p class="footnote">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.75 13 3.6v4.15c0 3.05-2.1 5.3-5 6.5-2.9-1.2-5-3.45-5-6.5V3.6z"/><path d="M5.9 8.1 7.4 9.6l2.8-3.1"/></svg>
+      {% if meta.backend.encrypted %}
+      <span>상세 기록을 요청하면 열람 권한을 확인하고 접근 기록을 남깁니다.</span>
+      {% else %}
+      <span>상세 기록을 요청하면 예시 계정의 열람 권한을 모의 확인하고 로컬에 요청을 기록합니다.</span>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<details class="panel process">
+  <summary class="process__title">검색 과정</summary>
+  <div class="process__body">
+    <div class="process__head">
+      <p class="process__method">계산 방식 <span class="process__value">{{ result.method_label }}</span></p>
+      <p class="process__sub">
+        {%- if result.all_connected -%}
+        모든 단계가 암호화 경로로 실행되었습니다.
+        {%- else -%}
+        {{ result.backend.note }}
+        {%- endif -%}
+      </p>
+    </div>
+
+    <ol class="flow" role="list">
+      {% for s in result.pipeline %}
+      <li class="stage stage--{{ s.actor }}" title="{{ s.detail }}">
+        <div class="stage__meta">
+          <span class="stage__no"><span class="sr">단계 </span>{{ loop.index }}</span>
+          {% if s.ms_text %}<span class="stage__ms"><span class="sr">측정 시간 </span>{{ s.ms_text }}</span>{% endif %}
+        </div>
+        <p class="stage__label">{{ s.label }}</p>
+        <p class="stage__actor">{{ s.actor_label }}</p>
+        <span class="tag tag--{{ s.status }}">{{ status_glyph(s.status) }}{{ s.status_label }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <p class="process__total">측정된 단계 합계 <span class="process__value">{{ result.timing.total_text }}</span></p>
+  </div>
+</details>
+
+
+{% else %}
+{# ── 검색 전 ──────────────────────────────────────────────────── #}
+<div class="panel sheet sheet--idle">
+  <div class="sheet__head">
+    <div class="sheet__titles">
+      <h2 class="sheet__title">유사 기록</h2>
+      <p class="sheet__sub">환자 정보를 입력하고 검색하면 가장 유사한 기록이 여기에 표시됩니다.</p>
+    </div>
+  </div>
+
+  {# 결과가 놓일 자리를 비어 있는 측정선으로 미리 보여 준다. 값은 없다 #}
+  <div class="rank rank--idle" aria-hidden="true">
+    {{ columns() }}
+    <ol class="rank__list">
+      {% for n in range(1, 4) %}
+      <li class="row">
+        <div class="row__main">
+          <span class="row__rank">{{ n }}</span>
+          <span class="row__id"><span class="blank"></span></span>
+          <span class="meter">
+            <span class="meter__track"></span>
+            {{ ticks() }}
+          </span>
+          <span class="row__score"><span class="blank"></span></span>
+        </div>
+        <span class="row__action"></span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div class="sheet__foot">
+    {{ disclaimer() }}
+  </div>
+</div>
+{% endif %}

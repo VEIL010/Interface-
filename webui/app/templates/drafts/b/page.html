@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{ meta.service.name }} {{ meta.service.subtitle }} · 시안 {{ draft.letter }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ asset('drafts/' ~ draft.key ~ '/style.css') }}">
+</head>
+<body>
+<div class="page">
+
+  {# ── 머리띠: 워드마크 + 두 가지 데이터 색의 정의 ── #}
+  <header class="top">
+    <h1 class="brand">
+      <span class="brand__name">{{ meta.service.name }}</span>
+      <span class="brand__sep" aria-hidden="true">/</span>
+      <span class="brand__sub">{{ meta.service.subtitle }}</span>
+    </h1>
+    <ul class="legend" aria-label="{% if meta.backend.encrypted %}데이터 색 범례{% else %}목표 구조의 데이터 색 범례{% endif %}">
+      <li class="legend__item">
+        <span class="sw sw--plain" aria-hidden="true"></span>
+        <span class="legend__term legend__term--plain">평문</span>
+        <span class="legend__def">{% if not meta.backend.encrypted %}목표 · {% endif %}클라이언트 내부</span>
+      </li>
+      <li class="legend__item">
+        <span class="sw sw--cipher" aria-hidden="true"></span>
+        <span class="legend__term legend__term--cipher">암호문</span>
+        <span class="legend__def">{% if not meta.backend.encrypted %}목표 · {% endif %}서버에서 비교</span>
+      </li>
+    </ul>
+    <nav class="top__nav" aria-label="화면 전환">
+      <span class="top__mode">발표 모드</span>
+      <a class="reset" href="{{ urls.home }}">의료진 화면으로 돌아가기</a>
+    </nav>
+  </header>
+
+  <main class="main">
+
+    {# ── 질의 띠: 고정 영역. 폼은 교체 대상(#results) 밖에 있어야 한다 ── #}
+    <section class="query" aria-labelledby="query-title">
+      <h2 class="query__title" id="query-title">환자 정보 입력</h2>
+
+      <form class="query__form" data-bm-search action="{{ urls.search }}" data-bm-target="#results" novalidate>
+        <div class="fields">
+          {% for f in meta.features %}
+          <div class="field">
+            <div class="field__head">
+              <label for="f-{{ f.key }}">{{ f.label }}</label>
+              <span class="field__range" id="h-{{ f.key }}"><span class="sr">입력 범위 </span>{{ f.min }}–{{ f.max }}<span class="sr"> {{ f.unit }}</span></span>
+            </div>
+            <div class="field__box">
+              <input id="f-{{ f.key }}" name="{{ f.key }}" type="number" inputmode="numeric"
+                     min="{{ f.min }}" max="{{ f.max }}" step="1" value="{{ form[f.key] }}"
+                     autocomplete="off" aria-describedby="h-{{ f.key }}"
+                     {%- if error and f.key in error.fields %} aria-invalid="true"{% endif %}>
+              <span class="field__tail" aria-hidden="true">
+                <span class="field__flag">!</span>
+                <span class="field__unit">{{ f.unit }}</span>
+              </span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <fieldset class="topk">
+          <legend class="topk__legend">결과 개수 (Top-K)</legend>
+          <div class="topk__seg">
+            {% for k in meta.top_k_options %}
+            <input class="topk__radio" type="radio" id="k-{{ k }}" name="top_k" value="{{ k }}" {% if form.top_k == k %}checked{% endif %}>
+            <label class="topk__opt" for="k-{{ k }}">{{ k }}</label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <input type="hidden" name="method" value="{{ form.method }}">
+
+        <div class="actions">
+          <button class="go" type="submit">
+            <span class="go__idle">
+              {%- if meta.backend.encrypted %}암호화 검색 실행{% else %}검색 실행{% endif -%}
+              <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+            </span>
+            <span class="go__busy" aria-hidden="true">검색 중…</span>
+          </button>
+          <a class="reset" href="{{ urls.empty }}">예시 입력으로 돌아가기</a>
+        </div>
+      </form>
+
+      <p class="query__note">
+        <span class="tag {% if meta.backend.encrypted %}tag--on{% else %}tag--mock{% endif %}">{{ meta.backend.label }}</span>
+        <span>
+          {%- if meta.backend.encrypted -%}
+          입력값은 이 기기에서 암호화된 뒤 서버로 전송됩니다.
+          {%- else -%}
+          현재 데모는 예시 질의와 합성 기록을 평문으로 비교합니다. 암호화 단계는 미연결 상태입니다.
+          {%- endif -%}
+        </span>
+      </p>
+      {% if not meta.backend.encrypted %}
+      <p class="demo-guide"><strong>목표 검색 흐름</strong> <span>의료기관에서 질의 암호화 <span aria-hidden="true">→</span><span class="sr"> 후 </span> 서버에서 암호문 유사도 계산 <span aria-hidden="true">→</span><span class="sr"> 후 </span> 의료기관에서 점수 복호화 및 Top-K 확인</span></p>
+      {% endif %}
+    </section>
+
+    {# ── 세 레인: 이 블록 전체가 동적 영역 ── #}
+    <div class="run">
+      <section id="results" class="run__region" aria-labelledby="run-title">
+        {% include "drafts/" ~ draft.key ~ "/_results.html" %}
+      </section>
+      {# 검색 요청 중에만 보인다 (#results[aria-busy] 형제 선택자). 자리를 차지하지 않는다 #}
+      <div class="run__loading" aria-hidden="true">
+        <span class="run__sweep"></span>
+        <span class="run__pill"><span class="run__dot"></span>검색 중…</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+{# 검색이 끝나면 extra.js 가 결과 한 줄 요약을 여기에 넣어 스크린리더에 알린다 #}
+<p class="sr" id="b-status" role="status"></p>
+
+<script src="{{ asset('shared/bm.js') }}" defer></script>
+<script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
+</body>
+</html>

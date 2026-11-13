@@ -1,0 +1,261 @@
+{#- 시안 C · 단계형 가이드 — 동적 영역 (단계 2–4).
+    page.html 에 include 되고, 검색 응답으로 단독 렌더링되기도 한다.
+    각 단계의 상태는 result.pipeline 이 보고한 값만 그린다:
+    "…했어요" 문장은 status 가 done 일 때만 나온다. -#}
+
+{%- macro rail(n) -%}
+<div class="step__rail" aria-hidden="true"><span class="step__num">{{ n }}</span><span class="step__line"></span></div>
+{%- endmacro -%}
+
+{#- 상태 모양: 꽉 찬 원(완료) · 반만 찬 원(평문 대체) · 점선 원(미연결) -#}
+{%- macro glyph(status) -%}
+<svg class="node" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+  {%- if status == 'done' -%}
+  <circle cx="8" cy="8" r="7" fill="currentColor"/><path class="tag__cut" d="M4.8 8.3l2.2 2.2 4.2-4.7"/>
+  {%- elif status == 'substituted' -%}
+  <circle class="tag__ring" cx="8" cy="8" r="6.25"/><path d="M8 1.75a6.25 6.25 0 0 0 0 12.5z" fill="currentColor"/>
+  {%- else -%}
+  <circle class="tag__ring tag__ring--dashed" cx="8" cy="8" r="6.25"/>
+  {%- endif -%}
+</svg>
+{%- endmacro -%}
+
+{#- 과정 목록에서는 모양을 왼쪽 마디(stage__node)가 맡고, 태그는 글자 + 색 + 테두리로 구분한다 -#}
+{%- macro tag(status, label) -%}
+<span class="tag tag--plain tag--{{ status }}">{{ label }}</span>
+{%- endmacro -%}
+
+{#- 사람 말 한 문장. 실제로 실행된(done) 단계만 과거형으로 말한다.
+    topic 은 "암호화는"처럼 어느 단계인지 알려 주는 짧은 주제어 (모르는 단계면 비운다). -#}
+{%- macro say(status, topic, done_text, fallback) -%}
+{%- if status == 'done' and done_text -%}{{ done_text }}
+{%- elif status == 'substituted' -%}{% if topic %}{{ topic }} 지금 평문으로 대신 계산해요{% else %}지금은 평문으로 대신 계산해요{% endif %}
+{%- elif status == 'not_connected' -%}{% if topic %}{{ topic }} {% endif %}아직 연결되지 않은 단계예요
+{%- else -%}{{ fallback }}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- 기술 용어 한 줄: 상태 태그 · 단계 이름 · 수행 주체 · (측정된 경우만) 시간.
+    가운뎃점은 앞말에 붙여 두어 줄이 바뀌어도 줄 머리에 점이 오지 않는다. -#}
+{%- macro tech(s) -%}
+<p class="tech">{{ tag(s.status, s.status_label) }}<span class="tech__text"><span class="nb"><span class="tech__name">{{ s.label }}</span> ·</span> {% if s.ms_text %}<span class="nb">{{ s.actor_label }} ·</span> <span class="nb">{{ s.ms_text }}</span>{% else %}<span class="nb">{{ s.actor_label }}</span>{% endif %}</span></p>
+{%- endmacro -%}
+
+{%- set done_say = {
+  'preprocess': '입력값을 벡터로 바꿨어요',
+  'encrypt': '이 기기에서 암호화했어요',
+  'decrypt': '점수를 이 기기에서 풀었어요',
+  'topk': '가장 비슷한 기록을 골랐어요'
+} -%}
+{%- set topic_of = {
+  'preprocess': '벡터로 바꾸기는',
+  'encrypt': '암호화는',
+  'decrypt': '점수 풀기는',
+  'topk': '기록 고르기는'
+} -%}
+
+{%- if error %}
+<div class="step step--alert">
+  <div class="step__rail" aria-hidden="true">
+    <span class="step__mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5.5"/><path d="M6 11.5l6-6 6 6"/></svg></span>
+    <span class="step__line"></span>
+  </div>
+  <div class="step__body">
+    <div class="alert" role="alert" tabindex="-1" data-bm-invalid="{{ error.fields|join(',') }}">
+      {%- if not error.fields %}
+      {#- 칸 문제가 아닌 오류(미연결 방식 등): 서버가 준 문장을 본문으로 그대로 보여 준다 #}
+      <p class="alert__title">검색하지 못했어요</p>
+      <p class="alert__lead">{{ error.message }}</p>
+      {%- else %}
+      {%- set known = (meta.features | map(attribute='key') | list) + ['top_k', 'method'] %}
+      <p class="alert__title">{{ error.message }}</p>
+      <p class="alert__lead">아래 칸을 고치고 다시 찾아 주세요.</p>
+      <ul class="alert__list" role="list">
+        {%- for f in meta.features if f.key in error.fields %}
+        <li class="alert__item" id="err-{{ f.key }}"><a class="alert__field" href="#f-{{ f.key }}">{{ f.label }}</a><span class="alert__msg">{{ error.fields[f.key] }}</span></li>
+        {%- endfor %}
+        {%- if 'top_k' in error.fields %}
+        <li class="alert__item"><a class="alert__field" href="#k-{{ meta.top_k_options | first }}">결과 개수</a><span class="alert__msg">{{ error.fields['top_k'] }}</span></li>
+        {%- endif %}
+        {%- if 'method' in error.fields %}
+        <li class="alert__item"><span class="alert__field">검색 방식</span><span class="alert__msg">{{ error.fields['method'] }}</span></li>
+        {%- endif %}
+        {%- for key, message in error.fields.items() if key not in known %}
+        <li class="alert__item"><span class="alert__field">{{ key }}</span><span class="alert__msg">{{ message }}</span></li>
+        {%- endfor %}
+      </ul>
+      {%- endif %}
+    </div>
+  </div>
+</div>
+{%- endif %}
+
+{%- if result %}
+
+{#- 서버가 맡는 단계(Input Expansion · HE-C³ Matching)는 한 문장으로 묶는다.
+    묶음의 문장은 서버 단계가 전부 done 일 때만 "…비교했어요"가 된다. -#}
+{%- set server = result.pipeline | selectattr('actor', 'equalto', 'server') | list -%}
+{%- set server_states = server | map(attribute='status') | list -%}
+{%- if (server_states | reject('equalto', 'done') | list | length) == 0 -%}
+  {%- set server_status = 'done' -%}
+{%- elif 'substituted' in server_states -%}
+  {%- set server_status = 'substituted' -%}
+{%- elif (server_states | reject('equalto', 'not_connected') | list | length) == 0 -%}
+  {%- set server_status = 'not_connected' -%}
+{%- else -%}
+  {%- set server_status = 'mixed' -%}
+{%- endif %}
+
+<section class="step step--process" aria-labelledby="s2-title">
+  {{ rail(2) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s2-title" tabindex="-1"><span class="vh">2단계. </span>
+      {%- if result.all_connected -%}
+      안전하게 검색했어요
+      {%- else -%}
+      검색했어요<span class="vh"> · </span><span class="step__title-note">암호화 단계는 아직 연결 전이에요</span>
+      {%- endif -%}
+    </h2>
+    <p class="step__lead">단계마다 실제로 한 일을 그대로 보여드려요.</p>
+
+    <div class="panel">
+      <div class="panel__head">
+        <h3 class="panel__name">검색 과정</h3>
+        {%- if result.timing and result.timing.total_text %}
+        <p class="panel__aside">측정된 단계 합계 {{ result.timing.total_text }}</p>
+        {%- endif %}
+      </div>
+      <ol class="stages" role="list">
+        {%- for s in result.pipeline %}
+        {%- if s.actor == 'server' %}
+        {%- if s.key == server[0].key %}
+        <li class="stage stage--{{ server_status }}">
+          <span class="stage__node">{{ glyph(server_status) }}</span>
+          <div class="stage__main">
+            <p class="stage__say">{{ say(server_status, '서버 비교는', '서버가 암호문인 채로 비교했어요', server | map(attribute='label') | join(' · ')) }}</p>
+            {%- for t in server %}
+            {{ tech(t) }}
+            {%- endfor %}
+          </div>
+        </li>
+        {%- endif %}
+        {%- else %}
+        <li class="stage stage--{{ s.status }}">
+          <span class="stage__node">{{ glyph(s.status) }}</span>
+          <div class="stage__main">
+          <p class="stage__say">{{ say(s.status, topic_of.get(s.key), done_say.get(s.key), s.label) }}</p>
+          {{ tech(s) }}
+          {%- if s.key == 'preprocess' and s.status == 'done' %}
+          <dl class="stage__data">
+            <div><dt>입력값</dt><dd>{% for i in result.query.inputs %}<span class="nb">{{ i.value }} {{ i.unit }}{% if not loop.last %} ·{% endif %}</span> {% endfor %}</dd></div>
+            <div><dt>L2 정규화 벡터</dt><dd>{% for v in result.query.vector_text %}<span class="nb">{{ v }}{% if not loop.last %},{% endif %}</span> {% endfor %}</dd></div>
+          </dl>
+          {%- endif %}
+          </div>
+        </li>
+        {%- endif %}
+        {%- endfor %}
+      </ol>
+    </div>
+
+    <details class="more">
+      <summary class="more__summary">
+        <span>암호 열쇠는 누가 갖고 있나요?</span>
+        <svg class="more__chev" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 9.5l6 6 6-6"/></svg>
+      </summary>
+      <div class="more__body">
+        <p class="more__lead">설계한 구조예요.{% if not meta.backend.encrypted %} 지금 mock 백엔드에는 아직 연결되지 않았어요.{% endif %}</p>
+        <ul class="holders" role="list">
+          {%- for h in meta.key_holders %}
+          <li class="holder">
+            <p class="holder__name">{{ h.label }}</p>
+            {%- if h.holds %}
+            <p class="holder__keys">{% for k in h.holds %}<span class="keychip">{{ k }}</span>{% endfor %}</p>
+            {%- endif %}
+            <p class="holder__note">{{ h.note }}</p>
+          </li>
+          {%- endfor %}
+        </ul>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="step step--results" aria-labelledby="s3-title">
+  {{ rail(3) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s3-title"><span class="vh">3단계. </span>가장 비슷한 기록 {{ result.results | length }}건</h2>
+    <p class="step__lead">등록 기록 {{ result.searched }}건과 비교했어요. <span class="step__tech">유사 기록 <span class="nb">Top-{{ result.top_k }}</span> · {{ meta.dataset.label }}</span></p>
+
+    <p class="note" role="note">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.75"/><path d="M12 11.25v5"/><path d="M12 7.75v.1"/></svg>
+      <span><span class="s">유사도는 기록이 서로 얼마나 닮았는지를 나타내요.</span> <span class="s">의료적 진단이나 발병 확률이 아니에요.</span></span>
+    </p>
+
+    {%- if result.results %}
+    <ol class="cards" role="list">
+      {%- for r in result.results %}
+      <li class="card">
+        <div class="card__head">
+          <p class="rank"><span class="vh">순위 </span><span class="rank__n">{{ r.rank }}</span><span class="rank__u">위</span></p>
+          <div class="stat">
+            <p class="stat__label">기록 ID</p>
+            <h3 class="stat__value">{{ r.record_id }}</h3>
+          </div>
+          <div class="stat stat--score">
+            <p class="stat__label">유사도</p>
+            <p class="stat__value stat__value--score">{{ r.score_text }}</p>
+          </div>
+        </div>
+        <div class="bar" aria-hidden="true"><span class="bar__fill" style="--pct: {{ r.bar_pct }}"></span></div>
+        <div class="card__action">
+          <button class="btn btn--ghost" type="button" data-bm-access="{{ r.access_url }}" data-bm-target="#{{ r.dom_id }}">
+            <span class="btn__stack">
+              <span class="btn__label btn__label--idle"><span class="vh">{{ r.record_id }} </span>상세 기록 요청하기</span>
+              <span class="btn__label btn__label--again"><span class="vh">{{ r.record_id }} 상세 기록 </span>다시 요청하기</span>
+              <span class="btn__label btn__label--busy"><span class="spinner" aria-hidden="true"></span>권한 확인 중…</span>
+            </span>
+          </button>
+        </div>
+        <div id="{{ r.dom_id }}" class="card__detail" aria-live="polite"></div>
+      </li>
+      {%- endfor %}
+    </ol>
+    {%- else %}
+    <p class="step__lead">비슷한 기록을 찾지 못했어요.</p>
+    {%- endif %}
+  </div>
+</section>
+
+<section class="step step--access" aria-labelledby="s4-title">
+  {{ rail(4) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s4-title"><span class="vh">4단계. </span>상세 기록은 권한을 확인한 뒤 보여드려요</h2>
+    <ul class="points" role="list">
+      <li><span><span class="s">검색 결과에는 기록 ID와 유사도만 들어 있어요.</span> <span class="s">상세 기록은 위 카드에서 따로 요청해 주세요.</span></span></li>
+      <li>요청하면 요청자 ID에 열람 권한이 있는지 먼저 확인해요.</li>
+      <li>권한이 있든 없든, 요청은 모두 접근 기록에 남아요.</li>
+    </ul>
+    <p class="who"><span class="who__label">기록 접근 제어 · 지금 요청자</span><span class="who__value">{{ meta.requester.label }} ({{ meta.requester.id }})</span></p>
+  </div>
+</section>
+
+{%- else %}
+
+{#- 검색 전(또는 입력 오류) — 다음 단계를 흐리게 예고한다 -#}
+{%- set upcoming = [
+  (2, '검색 과정', '검색하면 여기에 과정이 보여요.'),
+  (3, '가장 비슷한 기록', '환자 정보를 입력하고 검색하면 가장 비슷한 기록이 여기에 보여요.'),
+  (4, '상세 기록은 권한을 확인한 뒤 보여드려요', '결과가 나오면 기록마다 상세 기록을 따로 요청할 수 있어요.')
+] %}
+{%- for n, title, line in upcoming %}
+<section class="step step--upcoming" aria-labelledby="s{{ n }}-title">
+  {{ rail(n) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s{{ n }}-title"><span class="vh">{{ n }}단계, 검색 전. </span>{{ title }}</h2>
+    <p class="step__lead">{{ line }}</p>
+  </div>
+</section>
+{%- endfor %}
+
+{%- endif %}

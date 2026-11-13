@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ meta.service.name }} {{ meta.service.subtitle }} · 시안 {{ draft.letter }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ asset('drafts/' ~ draft.key ~ '/style.css') }}">
+</head>
+<body>
+{#
+  시안 A · 진료 워크스테이션
+  왼쪽 패널에 값 네 개를 입력하고 오른쪽 패널에서 가장 가까운 기록을 읽는다.
+  두 패널은 flex-wrap 으로 놓여 있어 폭이 좁아지면 입력 → 결과 순서로 쌓인다.
+  결과 패널(#results) 안쪽은 _results.html 조각이며 검색할 때마다 통째로 교체된다.
+#}
+
+<header class="bar">
+  <div class="bar__in">
+    <h1 class="brand">
+      <span class="brand__name">{{ meta.service.name }}</span>
+      <span class="brand__sub">{{ meta.service.subtitle }}</span>
+    </h1>
+
+    <ul class="chips" aria-label="연결 상태">
+      {% if meta.backend.encrypted %}
+      <li class="chip chip--secure">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.5 0V7"/></svg>
+        비밀키는 이 기기에만 보관됩니다
+      </li>
+      {% else %}
+      <li class="chip chip--open" title="{{ meta.backend.note }}">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.3-1"/></svg>
+        암호화 미연결 · mock
+      </li>
+      {% endif %}
+      <li class="chip">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.24 2 5 2s5-.9 5-2V4"/><path d="M3 8c0 1.1 2.24 2 5 2s5-.9 5-2"/></svg>
+        {{ meta.dataset.label }} · {{ meta.dataset.records }}건
+      </li>
+    </ul>
+    <nav class="bar__nav" aria-label="화면 전환">
+      <a class="bar__archive" href="{{ urls.archive }}">보관 시안</a>
+      <a class="btn btn--quiet bar__presentation" href="{{ urls.presentation }}">발표 모드</a>
+    </nav>
+  </div>
+</header>
+
+<main class="work">
+
+  {# ── 왼쪽: 입력 ─────────────────────────────────────────── #}
+  <section class="panel pane-form" aria-labelledby="form-title">
+    <form class="form" data-bm-search action="{{ urls.search }}" data-bm-target="#results" novalidate>
+      <div class="form__head">
+        <h2 class="form__title" id="form-title">환자 정보 입력</h2>
+        <div class="form__tools">
+          <button class="textlink" type="button" data-example-fill>예시 입력</button>
+          <a class="textlink" href="{{ urls.home }}">입력 초기화</a>
+        </div>
+      </div>
+
+      {# 두 개씩 묶어 둔 것은 배치용이다: 넓으면 한 줄에 넷, 보통은 2×2, 아주 좁으면 한 줄에 하나 #}
+      <div class="fields">
+        {% for pair in meta.features|batch(2) %}
+        <div class="fields__pair">
+          {% for f in pair %}
+          {% set message = error.fields[f.key] if error and f.key in error.fields else '' %}
+          <div class="field">
+            <label class="field__label" for="f-{{ f.key }}">
+              <span class="field__name">{{ f.label }}</span>
+              <span class="field__en" lang="en">{{ f.en }}</span>
+            </label>
+            <div class="field__box">
+              <input class="field__input" id="f-{{ f.key }}" name="{{ f.key }}" type="number" inputmode="numeric"
+                     min="{{ f.min }}" max="{{ f.max }}" step="1" value="{{ form[f.key] }}" data-example="{{ f.example }}" autocomplete="off"
+                     aria-describedby="unit-{{ f.key }} err-{{ f.key }}"{% if message %} aria-invalid="true"{% endif %}>
+              <span class="field__unit" id="unit-{{ f.key }}">{{ f.unit }}</span>
+            </div>
+            {# 검색 조각이 돌려준 필드별 메시지를 extra.js 가 이 자리에 옮겨 적는다 #}
+            <p class="field__error"{% if not message %} hidden{% endif %}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.75v3.75M8 11.1v.15"/></svg>
+              <span id="err-{{ f.key }}" data-error-slot="{{ f.key }}">{{ message }}</span>
+            </p>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="form__run">
+        <fieldset class="seg">
+          <legend class="seg__legend">결과 개수 <span class="seg__en">(Top-K)</span></legend>
+          <div class="seg__track">
+            {% for k in meta.top_k_options %}
+            <input class="seg__input" type="radio" id="k-{{ k }}" name="top_k" value="{{ k }}"{% if form.top_k == k %} checked{% endif %}>
+            <label class="seg__option" for="k-{{ k }}">{{ k }}</label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <input type="hidden" name="method" value="{{ form.method }}">
+
+        <button class="btn btn--primary" type="submit">
+          <span class="btn__label">유사 기록 검색</span>
+          <span class="btn__busy" aria-hidden="true"><span class="spinner"></span>검색 중…</span>
+        </button>
+      </div>
+
+      <p class="note">
+        {% if meta.backend.encrypted %}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.5 0V7"/></svg>
+        <span>입력값은 이 기기에서 암호화된 뒤 서버로 전송됩니다.</span>
+        {% else %}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.3-1"/></svg>
+        <span>합성 데이터 실습용입니다. 검색은 평문으로 실행됩니다.</span>
+        {% endif %}
+      </p>
+    </form>
+  </section>
+
+  {# ── 오른쪽: 결과 (검색할 때마다 교체되는 영역) ───────────── #}
+  <div class="pane-results">
+    <p class="sr" id="a-status" role="status"></p>
+    <p class="stale" id="a-stale" role="status"></p>
+    <section id="results" class="results" aria-label="검색 결과">
+      {% include "drafts/" ~ draft.key ~ "/_results.html" %}
+    </section>
+    {# #results 에 aria-busy 가 붙어 있는 동안에만 보인다 (style.css 의 "검색 중" 참고) #}
+    <p class="busy" aria-hidden="true"><span class="spinner"></span>검색 중…</p>
+  </div>
+
+</main>
+
+<script src="{{ asset('shared/bm.js') }}" defer></script>
+<script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
+</body>
+</html>

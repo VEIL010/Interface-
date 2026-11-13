@@ -1,0 +1,62 @@
+{#
+  시안 A · 상세 기록 조각
+  POST …/records/<id>/access 의 응답. 결과 행 바로 아래(#record-<id>)에 끼워진다.
+  상태는 셋이다: 없는 ID(404) · 열람 허용(200) · 열람 권한 없음(403).
+  접근 기록 문장은 서버가 실제로 기록한 시각(access.logged_at_text)이 있을 때만 쓴다.
+#}
+
+{%- macro logged(sentence) -%}
+  {%- if access.logged_at_text -%}
+  <p class="record__log">
+    <span>{{ sentence }}</span>
+    <span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span>
+    <time class="record__time">{{ access.logged_at_text }}</time>
+  </p>
+  {%- endif -%}
+{%- endmacro -%}
+
+{% if not access.found %}
+<article class="record record--missing">
+  <div class="record__head">
+    <span class="tag tag--not_connected">
+      <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.1 2.02"/></svg>
+      기록 없음
+    </span>
+    <h3 class="record__title"><span class="record__id">{{ access.record_id }}</span></h3>
+  </div>
+  <p class="record__text">{{ access.reason }}</p>
+</article>
+
+{% elif access.granted %}
+<article class="record record--granted">
+  <div class="record__head">
+    <span class="tag tag--done">
+      <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path class="glyph__mark" d="M3.4 6.2 5.2 8 8.6 4.3" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{ '권한 확인됨' if meta.backend.encrypted else '모의 열람 허용' }}
+    </span>
+    <h3 class="record__title"><span class="record__id">{{ access.record_id }}</span> 상세 기록</h3>
+  </div>
+  <dl class="record__fields">
+    {% for f in access.fields %}
+    <div class="record__field">
+      <dt>{{ f.label }}</dt>
+      <dd><span class="record__value">{{ f.value }}</span> <span class="record__unit">{{ f.unit }}</span></dd>
+    </div>
+    {% endfor %}
+  </dl>
+  {{ logged('접근 기록에 남았습니다' if meta.backend.encrypted else '로컬 시연 기록에 남았습니다') }}
+</article>
+
+{% else %}
+<article class="record record--denied">
+  <div class="record__head">
+    <span class="tag tag--deny">
+      <svg class="glyph" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="5.25"/><path d="M2.4 9.6 9.6 2.4"/></svg>
+      {{ '열람 권한 없음' if meta.backend.encrypted else '모의 열람 권한 없음' }}
+    </span>
+    <h3 class="record__title"><span class="record__id">{{ access.record_id }}</span> 상세 기록</h3>
+  </div>
+  <p class="record__text">{{ access.reason }}</p>
+  {{ logged('이 요청도 접근 기록에 남았습니다' if meta.backend.encrypted else '로컬 시연 기록에 남았습니다') }}
+</article>
+{% endif %}

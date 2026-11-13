@@ -1,0 +1,53 @@
+{#- 시안 B · 상세 기록 조각 — 기록 접근 제어(키 없음 · ID만 처리)의 응답.
+    허용 / 거부 / 없는 ID 세 경우를 그린다. 단독으로 렌더링된다. -#}
+{%- if access.granted %}
+<div class="rec rec--granted">
+  <p class="rec__status">
+    <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.25 3.25L13 5"/></svg>
+    <span>{% if meta.backend.encrypted %}권한 확인됨 · 접근 기록에 남았습니다{% else %}모의 권한 확인 · 열람 허용{% endif %}</span>
+  </p>
+  <dl class="pairs rec__fields">
+    {%- for f in access.fields %}
+    <div class="pair"><dt>{{ f.label }}</dt><dd><span class="num">{{ f.value }}</span> <span class="unit">{{ f.unit }}</span></dd></div>
+    {%- endfor %}
+  </dl>
+  <p class="rec__log">
+    <span>기록 {{ access.record_id }}</span>
+    <span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span>
+    {%- if access.logged_at_text %}
+    <span>{{ access.logged_at_text }}</span>
+    <span>{% if not meta.backend.encrypted %}데모 {% endif %}접근 기록 {{ access.log_count }}번째</span>
+    {%- endif %}
+  </p>
+</div>
+{%- elif access.found %}
+<div class="rec rec--denied">
+  <p class="rec__status">
+    <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.25" y="7.25" width="9.5" height="6.5" rx="1"/><path d="M5.25 7.25V5.5a2.75 2.75 0 0 1 5.5 0v1.75"/></svg>
+    <span>{% if meta.backend.encrypted %}열람 권한 없음{% else %}모의 권한 확인 · 열람 거부{% endif %}</span>
+  </p>
+  {%- if access.reason %}
+  <p class="rec__reason">{{ access.reason }}</p>
+  {%- endif %}
+  <p class="rec__reason">{% if meta.backend.encrypted %}이 요청도 접근 기록에 남았습니다.{% else %}이 요청도 데모 접근 기록에 표시됩니다.{% endif %}</p>
+  <p class="rec__log">
+    <span>기록 {{ access.record_id }}</span>
+    <span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span>
+    {%- if access.logged_at_text %}
+    <span>{{ access.logged_at_text }}</span>
+    <span>{% if not meta.backend.encrypted %}데모 {% endif %}접근 기록 {{ access.log_count }}번째</span>
+    {%- endif %}
+  </p>
+</div>
+{%- else %}
+<div class="rec rec--missing">
+  <p class="rec__status">
+    <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M3.6 12.4l8.8-8.8"/></svg>
+    <span>{{ access.reason or '기록을 찾을 수 없습니다.' }}</span>
+  </p>
+  <p class="rec__log">
+    <span>요청한 ID {{ access.record_id }}</span>
+    <span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span>
+  </p>
+</div>
+{%- endif %}

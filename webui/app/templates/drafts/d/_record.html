@@ -1,0 +1,37 @@
+{# 시안 D · 상세 기록 조각. 결과 행 바로 아래 칸(#record-<ID>)에 들어간다.
+   허용(200) · 권한 없음(403) · 없는 ID(404) 세 상태를 같은 틀로 그린다. #}
+<article class="panel" data-d-focus tabindex="-1" aria-labelledby="rt-{{ access.record_id }}">
+  <header class="panel__head">
+    <h3 class="panel__title" id="rt-{{ access.record_id }}">{{ access.record_id }} 상세 기록</h3>
+    {% if access.granted %}
+    <p class="st st--done"><span class="st__mark" aria-hidden="true"></span>권한 확인됨</p>
+    <p class="panel__log">접근 기록에 남았습니다</p>
+    {% elif access.found %}
+    <p class="st st--denied"><span class="st__mark" aria-hidden="true"></span>열람 권한 없음</p>
+    <p class="panel__log">이 요청도 접근 기록에 남았습니다</p>
+    {% else %}
+    <p class="st st--not_connected"><span class="st__mark" aria-hidden="true"></span>기록 없음</p>
+    {% endif %}
+  </header>
+
+  {% if access.granted %}
+  <dl class="panel__fields">
+    {% for f in access.fields %}
+    <div class="pf">
+      <dt class="pf__k">{{ f.label }}</dt>
+      <dd class="pf__v">{{ f.value }}<span class="unit">{{ f.unit }}</span></dd>
+    </div>
+    {% endfor %}
+  </dl>
+  {% elif access.reason %}
+  <p class="panel__reason">{{ access.reason }}</p>
+  {% endif %}
+
+  <p class="panel__meta">
+    <span>요청자 {{ access.requester.label }} ({{ access.requester.id }})</span>
+    {% if access.logged_at_text %}
+    <span>기록 시각 {{ access.logged_at_text }}</span>
+    <span>접근 기록 누적 {{ access.log_count }}건</span>
+    {% endif %}
+  </p>
+</article>

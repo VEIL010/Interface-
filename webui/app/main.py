@@ -162,7 +162,7 @@ def draft_page(request: Request, key: str, state: str | None = None):
         return _not_found("없는 시안입니다.")
     if not _draft_ready(key):
         return _not_found(f"시안 {DRAFTS[key]['letter']} 는 아직 준비 중입니다.")
-    if key in ("a", "b") and state != "legacy":
+    if (key in ("a", "b") and state != "legacy") or key == "c":
         form = {**heart_fields.form_values(example=key == "b"), "top_k": heart_query.DEFAULT_TOP_K}
         context = _heart_context(key, form)
     elif state == "empty":
@@ -181,7 +181,7 @@ def _heart_context(key: str, form: dict, result=None, error=None) -> dict:
     context["heart_fields"] = heart_fields.FIELDS
     context["heart_groups"] = heart_fields.groups()
     # 검색은 의료진 화면(A)에서만 켠다. 발표 모드(B)는 목표 흐름을 보여 주는 화면이다.
-    context["heart_search"] = key == "a" and heart_query.enabled()
+    context["heart_search"] = key in ("a", "c") and heart_query.enabled()
     return context
 
 
@@ -206,6 +206,31 @@ async def heart_search(request: Request):
     context = _heart_context("a", {**form, "top_k": top_k}, result, error)
     return templates.TemplateResponse(
         request=request, name="drafts/a/_results.html", context=context, status_code=status
+    )
+
+
+@app.post("/drafts/c/heart-search", response_class=HTMLResponse)
+async def heart_search_c(request: Request):
+    """C 단계형 가이드의 실제 13개 의료 특징 평문 검색."""
+    if not heart_query.enabled():
+        return _not_found("검색 API가 연결되지 않았습니다.")
+    form, values, top_k, field_errors = heart_query.parse(await _read_json(request))
+    result = error = None
+    status = 200
+    if field_errors:
+        error, status = {"message": "입력값을 확인해 주세요.", "fields": field_errors}, 422
+    else:
+        try:
+            vector = await run_in_threadpool(heart_query.vectorize, values)
+            found = await run_in_threadpool(heart_query.search, vector, top_k)
+            result = heart_query.present(form, values, top_k, found)
+        except heart_query.SearchUnavailable as exc:
+            error, status = {"message": str(exc), "fields": {}}, 502
+        except RuntimeError:
+            error, status = {"message": "입력값을 질의 벡터로 바꾸지 못했습니다.", "fields": {}}, 500
+    context = _heart_context("c", {**form, "top_k": top_k}, result, error)
+    return templates.TemplateResponse(
+        request=request, name="drafts/c/_heart_results.html", context=context, status_code=status
     )
 
 

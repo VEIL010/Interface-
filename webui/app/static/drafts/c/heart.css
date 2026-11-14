@@ -1,0 +1,23 @@
+/* C 단계형 UI에 실제 Heart Disease 13개 입력을 연결하는 추가 스타일.
+   기존 style.css, 단계 레일, 결과 카드 디자인은 유지합니다. */
+.heart-toolbar {display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.heart-toolbar__label {font-size:.92rem; color:var(--ink-2); font-weight:600;}
+.heart-toolbar__fill {border:0; background:transparent; cursor:pointer; padding:0 4px;}
+.heart-group {min-width:0; margin:0; padding:18px 0 3px; border:0; border-top:1px solid var(--hairline);}
+.heart-group__title {float:left; width:100%; padding:0; margin:0 0 14px; font-size:.92rem; font-weight:700; color:var(--ink-2);}
+.heart-group__fields {clear:both; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 16px;}
+.heart-group .field {min-width:0;}
+.heart-optional {font-size:.8rem; color:var(--ink-2); font-weight:400;}
+.heart-group .field__input {font-size:1rem;}
+.heart-group select.field__input {padding:0 30px 0 13px; appearance:auto; -webkit-appearance:menulist; font-weight:500; cursor:pointer;}
+.heart-group input.field__input:not(:has(~ .field__unit)) {padding-right:14px;}
+.heart-group .field__hint {font-size:.81rem;}
+.heart-node {display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-size:15px; line-height:1; font-weight:700;}
+.heart-node--done {color:white; background:var(--ok-ink);}
+.heart-node--off {color:var(--off-ink); border:1px dashed var(--edge);}
+.heart-input-summary {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 15px; border:1px solid var(--hairline); padding:16px; border-radius:var(--r-card);}
+.heart-input-summary div {min-width:0;}
+.heart-input-summary dt {font-size:.83rem; color:var(--ink-2);}
+.heart-input-summary dd {font-size:.95rem; font-weight:600; margin:0; overflow-wrap:anywhere;}
+.form .btn:disabled {background:#EAEBED; color:#6A6E76; border-color:#D8DADE; cursor:not-allowed;}
+@media(max-width:560px){.heart-group__fields,.heart-input-summary{grid-template-columns:1fr}}

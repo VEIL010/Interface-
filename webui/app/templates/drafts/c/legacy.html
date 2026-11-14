@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F4F3FA">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" href="data:,">
+<title>{{ meta.service.name }} {{ meta.service.subtitle }} · 시안 {{ draft.letter }}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="{{ asset('drafts/' ~ draft.key ~ '/style.css') }}">
+</head>
+<body>
+{#- 시안 C · 단계형 가이드
+    ① 은 고정(입력 폼), ②–④ 는 #results 안에서 _results.html 이 그린다. -#}
+<div class="page">
+  <div class="guide">
+
+    <header class="top">
+      <div class="top__row">
+        <p class="brand">
+          <span class="brand__name">{{ meta.service.name }}</span>
+          <span class="brand__dot" aria-hidden="true">·</span>
+          <span class="brand__sub">{{ meta.service.subtitle }}</span>
+        </p>
+        <p class="mode{% if not meta.backend.encrypted %} mode--mock{% endif %}">{{ meta.backend.label }}</p>
+      </div>
+      <h1 class="top__title"><span class="s">환자 정보를 넣으면</span> <span class="s">가장 비슷한 기록을 찾아 드려요.</span></h1>
+    </header>
+
+    <main class="flow">
+
+      <section class="step step--form" aria-labelledby="s1-title">
+        <div class="step__rail" aria-hidden="true"><span class="step__num">1</span><span class="step__line"></span></div>
+        <div class="step__body">
+          <h2 class="step__title" id="s1-title"><span class="vh">1단계. </span>환자 정보를 입력해 주세요</h2>
+          <p class="step__lead"><span class="s">처음에는 예시 값이 들어 있어요.</span> <span class="s">환자 값으로 바꿔 주세요.</span></p>
+
+          <form class="form" method="post" data-bm-search action="{{ urls.search }}" data-bm-target="#results" novalidate>
+            <div class="fields">
+              {%- for f in meta.features %}
+              <div class="field">
+                <label class="field__label" for="f-{{ f.key }}">{{ f.label }}</label>
+                <input class="field__input" id="f-{{ f.key }}" name="{{ f.key }}" type="number" inputmode="numeric"
+                       min="{{ f.min }}" max="{{ f.max }}" step="1" value="{{ form[f.key] }}" autocomplete="off"
+                       aria-describedby="hint-{{ f.key }} err-{{ f.key }}"{% if error and f.key in error.fields %} aria-invalid="true"{% endif %}>
+                <span class="field__unit" aria-hidden="true">{{ f.unit }}</span>
+                <p class="field__hint" id="hint-{{ f.key }}">{{ f.min }}–{{ f.max }} {{ f.unit }} 사이<span class="field__flag"> · 확인이 필요해요</span></p>
+              </div>
+              {%- endfor %}
+            </div>
+
+            <div class="count" role="radiogroup" aria-labelledby="count-label">
+              <p class="count__label" id="count-label">몇 건을 볼까요? <span class="count__tech">결과 개수 (Top-K)</span></p>
+              <div class="seg">
+                {%- for k in meta.top_k_options %}
+                <label class="seg__opt" for="k-{{ k }}">
+                  <input type="radio" id="k-{{ k }}" name="top_k" value="{{ k }}"{% if form.top_k == k %} checked{% endif %}>
+                  <span class="seg__face"><svg class="seg__check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{ k }}건</span>
+                </label>
+                {%- endfor %}
+              </div>
+            </div>
+
+            <input type="hidden" name="method" value="{{ form.method }}">
+
+            <button class="btn btn--primary" type="submit">
+              <span class="btn__stack">
+                <span class="btn__label btn__label--idle">비슷한 기록 찾기</span>
+                <span class="btn__label btn__label--busy"><span class="spinner" aria-hidden="true"></span>찾고 있어요…</span>
+              </span>
+            </button>
+
+            <div class="form__foot">
+              <p class="form__note">
+                {%- if meta.backend.encrypted %}
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
+                <span>입력값은 이 기기에서 암호화된 뒤 서버로 전송돼요.</span>
+                {%- else %}
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.7-1.4"/></svg>
+                <span>지금은 mock 백엔드예요. 암호화 단계가 연결되기 전이라 평문으로 계산해요.</span>
+                {%- endif %}
+              </p>
+              <a class="link" href="{{ urls.empty }}">입력 초기화</a>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <div id="results" aria-live="polite">
+        {%- include "drafts/" ~ draft.key ~ "/_results.html" %}
+      </div>
+
+    </main>
+  </div>
+</div>
+
+{% include "shared/_devbar.html" %}
+<script src="{{ asset('shared/bm.js') }}" defer></script>
+<script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
+</body>
+</html>

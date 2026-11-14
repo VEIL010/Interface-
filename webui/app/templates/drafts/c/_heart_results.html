@@ -1,0 +1,110 @@
+{# 시안 C: 실제 UCI 전처리 + Medical-Search-API 결과. 합성 데이터 결과와 구분해 렌더링한다. #}
+{% macro rail(number) %}
+<div class="step__rail" aria-hidden="true"><span class="step__num">{{ number }}</span><span class="step__line"></span></div>
+{% endmacro %}
+
+{% if error %}
+<section class="step step--alert">
+  {{ rail(2) }}
+  <div class="step__body">
+    <div class="alert" role="alert" tabindex="-1" data-bm-invalid="{{ error.fields|join(',') }}">
+      <p class="alert__title">검색하지 못했어요</p>
+      <p class="alert__lead">{{ error.message }}</p>
+      {% if error.fields %}
+      <ul class="alert__list" role="list">
+        {% for f in heart_fields if f.key in error.fields %}
+        <li class="alert__item"><a class="alert__field" href="#f-{{ f.key }}">{{ f.label }}</a><span class="alert__msg">{{ error.fields[f.key] }}</span></li>
+        {% endfor %}
+        {% if 'top_k' in error.fields %}
+        <li class="alert__item"><span class="alert__field">결과 개수</span><span class="alert__msg">{{ error.fields['top_k'] }}</span></li>
+        {% endif %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% elif result %}
+<section class="step step--process" aria-labelledby="s2-title"
+         data-heart-query='{{ result.query.inputs | tojson }}' data-heart-top-k="{{ result.top_k }}">
+  {{ rail(2) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s2-title" tabindex="-1"><span class="vh">2단계. </span>실제 데이터 검색이 완료됐어요</h2>
+    <p class="heart-stale" role="status" data-heart-stale></p>
+    <p class="step__lead">입력값은 클라이언트에서 벡터화하고, 서버에서 평문 코사인 유사도를 계산했어요.</p>
+    <div class="panel">
+      <div class="panel__head"><h3 class="panel__name">처리 과정</h3><p class="panel__aside">암호화 검색은 아직 연결 전</p></div>
+      <ol class="stages" role="list">
+        <li class="stage stage--done">
+          <span class="stage__node"><span class="heart-node heart-node--done" aria-hidden="true">✓</span></span>
+          <div class="stage__main"><p class="stage__say">13개 의료 특징을 32차원 벡터로 변환했어요</p>
+            <p class="tech"><span class="tag tag--done">완료</span><span class="tech__text">저장된 전처리기 · L2 정규화</span></p></div>
+        </li>
+        <li class="stage stage--done">
+          <span class="stage__node"><span class="heart-node heart-node--done" aria-hidden="true">✓</span></span>
+          <div class="stage__main"><p class="stage__say">등록 기록 {{ result.searched }}건과 평문으로 비교했어요</p>
+            <p class="tech"><span class="tag tag--done">완료</span><span class="tech__text">Medical-Search-API · Cosine Similarity</span></p></div>
+        </li>
+        <li class="stage stage--not_connected">
+          <span class="stage__node"><span class="heart-node heart-node--off" aria-hidden="true">○</span></span>
+          <div class="stage__main"><p class="stage__say">CKKS / Blind-Match 암호화 검색은 아직 연결 전이에요</p>
+            <p class="tech"><span class="tag tag--not_connected">미연결</span><span class="tech__text">향후 BlindMatchCore 연동 예정</span></p></div>
+        </li>
+      </ol>
+    </div>
+    <details class="more">
+      <summary class="more__summary">이번 검색에 사용한 입력 보기</summary>
+      <div class="more__body">
+        <dl class="heart-input-summary">
+        {% for i in result.query.inputs %}
+          <div><dt>{{ i.label }}</dt><dd>{{ i.text }} {{ i.unit }}</dd></div>
+        {% endfor %}
+        </dl>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="step step--results" aria-labelledby="s3-title">
+  {{ rail(3) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s3-title"><span class="vh">3단계. </span><span data-heart-stale-label hidden>이전 검색 · </span>가장 비슷한 기록 {{ result.results|length }}건</h2>
+    <p class="step__lead">등록 의료 기록 {{ result.searched }}건 중 Top-{{ result.top_k }} 결과예요.</p>
+    <p class="note" role="note">유사도는 수학적 특징 벡터의 유사성으로, 질병 진단이나 발병 확률을 뜻하지 않아요.</p>
+    <ol class="cards" role="list">
+      {% for r in result.results %}
+      <li class="card">
+        <div class="card__head">
+          <p class="rank"><span class="vh">순위 </span><span class="rank__n">{{ r.rank }}</span><span class="rank__u">위</span></p>
+          <div class="stat"><p class="stat__label">기록 ID</p><h3 class="stat__value">{{ r.record_id }}</h3></div>
+          <div class="stat stat--score"><p class="stat__label">코사인 유사도</p><p class="stat__value stat__value--score">{{ r.score_text }}</p></div>
+        </div>
+        <div class="bar" aria-hidden="true"><span class="bar__fill" style="--pct: {{ r.bar_pct }}"></span></div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+<section class="step step--access" aria-labelledby="s4-title">
+  {{ rail(4) }}
+  <div class="step__body">
+    <h2 class="step__title" id="s4-title"><span class="vh">4단계. </span>검색 결과를 확인해 주세요</h2>
+    <ul class="points" role="list">
+      <li>현재 API 응답에는 기록 ID와 코사인 유사도 점수만 포함됩니다.</li>
+      <li>상세 의료 기록 조회 및 접근 권한 확인 기능은 아직 연결되지 않았습니다.</li>
+      <li>지금은 연구용 공개 데이터의 평문 검색 결과이며 실제 의료 진단에 사용하지 않습니다.</li>
+    </ul>
+  </div>
+</section>
+{% else %}
+{% for number, title, explanation in [
+  (2, '검색 과정', '검색하면 벡터화 및 평문 검색 과정을 보여드려요.'),
+  (3, '유사 기록', '검색이 완료되면 실제 의료 기록의 Top-K 결과가 표시돼요.'),
+  (4, '검색 결과 확인', '상세 기록 열람은 아직 별도 연동이 필요해요.')
+] %}
+<section class="step step--upcoming" aria-labelledby="s{{ number }}-title">
+  {{ rail(number) }}
+  <div class="step__body"><h2 class="step__title" id="s{{ number }}-title">{{ title }}</h2><p class="step__lead">{{ explanation }}</p></div>
+</section>
+{% endfor %}
+{% endif %}

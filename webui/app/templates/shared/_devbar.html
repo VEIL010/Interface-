@@ -1,10 +1,14 @@
 {# 보관 시안의 개발용 전환 막대 #}
 <nav class="bm-devbar" aria-label="시안 전환 (개발용)">
-  <a href="{{ urls.archive }}">목록</a>
+  <a href="/drafts"{% if draft is not defined %} aria-current="page"{% endif %}>목록</a>
   {% for d in drafts %}
-  <a href="/drafts/{{ d.key }}" title="시안 {{ d.letter }} · {{ d.name }}"{% if d.key == draft.key %} aria-current="page"{% endif %}>{{ d.letter }}</a>
+  <a href="/drafts/{{ d.key }}" title="시안 {{ d.letter }} · {{ d.name }}"{% if draft is defined and d.key == draft.key %} aria-current="page"{% endif %}>{{ d.letter }}</a>
   {% endfor %}
-  <span class="bm-devbar__mock" title="{{ meta.backend.note }}">{{ meta.backend.label }}</span>
+  {% if heart_search %}
+  <span class="bm-devbar__status" title="Medical-Search-API를 사용하는 평문 검색">평문 검색 연결</span>
+  {% elif draft is defined and not heart_fields %}
+  <span class="bm-devbar__status" title="{{ meta.backend.note }}">{{ meta.backend.label }}</span>
+  {% endif %}
 </nav>
 <style>
   .bm-devbar { position: fixed; right: 12px; bottom: 12px; z-index: 2147483000; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: #111418; color: #ffffff; font: 500 12px/1 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); }
@@ -12,7 +16,7 @@
   .bm-devbar a:hover { background: #2b323a; }
   .bm-devbar a:focus-visible { outline: 2px solid #ffd27a; outline-offset: 1px; }
   .bm-devbar a[aria-current="page"] { background: #ffffff; color: #111418; }
-  .bm-devbar__mock { padding: 0 10px 0 8px; color: #ffd27a; white-space: nowrap; }
-  @media (max-width: 480px) { .bm-devbar__mock { display: none; } }
+  .bm-devbar__status { padding: 0 10px 0 8px; color: #ffd27a; white-space: nowrap; }
+  @media (max-width: 480px) { .bm-devbar__status { display: none; } }
   @media print { .bm-devbar { display: none; } }
 </style>

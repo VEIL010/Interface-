@@ -1,8 +1,8 @@
 {# 보관 시안의 개발용 전환 막대 #}
 <nav class="bm-devbar" aria-label="시안 전환 (개발용)">
-  <a href="{{ urls.archive }}">목록</a>
+  <a href="/drafts"{% if draft is not defined %} aria-current="page"{% endif %}>목록</a>
   {% for d in drafts %}
-  <a href="/drafts/{{ d.key }}" title="시안 {{ d.letter }} · {{ d.name }}"{% if d.key == draft.key %} aria-current="page"{% endif %}>{{ d.letter }}</a>
+  <a href="/drafts/{{ d.key }}" title="시안 {{ d.letter }} · {{ d.name }}"{% if draft is defined and d.key == draft.key %} aria-current="page"{% endif %}>{{ d.letter }}</a>
   {% endfor %}
   <span class="bm-devbar__mock" title="{{ meta.backend.note }}">{{ meta.backend.label }}</span>
 </nav>

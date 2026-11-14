@@ -150,7 +150,7 @@ def home(request: Request):
 
 @app.get("/drafts", response_class=HTMLResponse)
 def draft_archive(request: Request):
-    drafts = [{**DRAFTS[key], "ready": _draft_ready(key)} for key in ("c", "d")]
+    drafts = [{**DRAFTS[key], "ready": _draft_ready(key)} for key in ("a", "b", "c", "d")]
     return templates.TemplateResponse(
         request=request, name="index.html", context={"drafts": drafts, "meta": backend.meta()}
     )

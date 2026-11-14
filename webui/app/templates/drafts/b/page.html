@@ -30,10 +30,7 @@
         <span class="legend__def">{% if not meta.backend.encrypted %}목표 · {% endif %}서버에서 비교</span>
       </li>
     </ul>
-    <nav class="top__nav" aria-label="화면 전환">
-      <span class="top__mode">발표 모드</span>
-      <a class="reset" href="{{ urls.home }}">의료진 화면으로 돌아가기</a>
-    </nav>
+    
   </header>
 
   <main class="main">
@@ -172,5 +169,6 @@
 <script src="{{ asset('shared/bm.js') }}" defer></script>
 <script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
 {% endif %}
+{% include "shared/_devbar.html" %}
 </body>
 </html>

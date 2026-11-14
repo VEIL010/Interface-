@@ -36,10 +36,7 @@
       <li class="chip">{{ meta.dataset.label }} {{ meta.dataset.records }}건</li>
       {% endif %}
     </ul>
-    <nav class="bar__nav" aria-label="화면 전환">
-      <a class="bar__archive" href="{{ urls.archive }}">보관 시안</a>
-      <a class="bar__presentation" href="{{ urls.presentation }}">발표 모드</a>
-    </nav>
+    
   </div>
 </header>
 
@@ -177,5 +174,6 @@
 
 {% if not heart_fields or heart_search %}<script src="{{ asset('shared/bm.js') }}" defer></script>{% endif %}
 <script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
+{% include "shared/_devbar.html" %}
 </body>
 </html>

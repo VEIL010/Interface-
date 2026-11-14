@@ -14,6 +14,8 @@ import re
 import sys
 import warnings
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -43,9 +45,9 @@ def check_api() -> None:
     print("[공통] 서버와 JSON API")
     home = client.get("/")
     check(home.status_code == 200 and 'name="trestbps"' in home.text, "GET / → 의료진 질의 입력 화면")
-    check("P023" not in home.text and 'href="/drafts/b?state=empty"' in home.text, "기본 화면은 검색 전 상태이며 발표 모드에 연결")
+    check("P023" not in home.text and 'href="/drafts/b"' in home.text, "기본 화면은 검색 전 상태이며 발표 모드에 연결")
     archive = client.get("/drafts")
-    check(archive.status_code == 200 and all(f'href="/drafts/{key}"' in archive.text for key in ("c", "d")), "보관 목록에서 C·D 열기")
+    check(archive.status_code == 200 and all(f'href="/drafts/{key}"' in archive.text for key in DRAFTS), "목록에서 A·B·C·D 열기")
     check(client.get("/healthz").json().get("ok") is True, "GET /healthz")
 
     meta = client.get("/api/meta").json()
@@ -89,6 +91,8 @@ def check_draft(key: str) -> None:
         check(f'name="{f.key}"' in html, f"입력 필드 name={f.key}")
         check(f.label in html, f"라벨 '{f.label}'")
     check('name="top_k"' in html, "Top-K 선택 name=top_k")
+    if key in ("c", "d"):
+        check(backend.BACKEND_INFO["label"] in html, "합성 데모 백엔드 표시")
     for record_id, score in EXPECTED_TOP3:
         check(record_id in html and score in html, f"초기 결과에 {record_id} {score}")
     check("진단" in html, "유사도 ≠ 진단 고지 문구")
@@ -136,62 +140,122 @@ def check_heart_draft(key: str) -> None:
     page = client.get(f"/drafts/{key}")
     check(page.status_code == 200 and "검색 API 연결 대기" in page.text, "검색 API 연결 대기 상태 표시")
     check("<form" not in page.text and "data-bm-search" not in page.text, "API 연결 전 질의 제출 경로 없음")
+    check_heart_fields(page.text)
+
+
+def check_heart_fields(html: str) -> None:
     check(
-        all(f'name="{field["key"]}"' in page.text for field in heart_fields.FIELDS)
-        and len(heart_fields.FIELDS) == 13 and 'name="num"' not in page.text,
+        all(f'name="{field["key"]}"' in html for field in heart_fields.FIELDS)
+        and len(heart_fields.FIELDS) == 13 and 'name="num"' not in html,
         "결과 레이블을 제외한 13개 파이프라인 입력",
     )
 
 
-def check_heart_search() -> None:
-    """검색 API 가 연결된 A 화면. 검색 서버는 가짜(httpx.MockTransport)로 대신한다."""
-    print("[시안 A] Heart Disease 검색 (검색 API 연결)")
-    if not (heart_query.pipeline_dir() / "preprocessor.joblib").is_file():
-        print("  skip  전처리기(.pipeline-data)가 없어 건너뜀")
-        return
+def write_preprocessor_fixture(folder: Path) -> None:
+    """공개 데이터 다운로드 없이 운영 전처리기와 같은 입력 계약의 모델을 만든다."""
+    import joblib
+    import pandas as pd
+    from sklearn.compose import ColumnTransformer
+    from sklearn.impute import SimpleImputer
+    from sklearn.pipeline import Pipeline, make_pipeline
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+    numeric = [field["key"] for field in heart_fields.FIELDS if not field["options"]]
+    categorical = [field["key"] for field in heart_fields.FIELDS if field["options"]]
+    examples = heart_fields.form_values(example=True)
+    columns = {key: [float(examples[key]) + i for i in range(4)] for key in numeric}
+    for field in heart_fields.FIELDS:
+        if field["options"]:
+            values = [value for value, _ in field["options"]]
+            if field["key"] == "thal":
+                values = [str(float(value)) for value in values] + [heart_query.MISSING]
+            columns[field["key"]] = [values[i % len(values)] for i in range(4)]
+    transformer = ColumnTransformer([
+        ("numeric", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()), numeric),
+        ("categorical", Pipeline([("encode", OneHotEncoder(sparse_output=False))]), categorical),
+    ]).fit(pd.DataFrame(columns))
+    joblib.dump(transformer, folder / "preprocessor.joblib")
+    (folder / "metadata.json").write_text(json.dumps({
+        "numeric_columns": numeric, "categorical_columns": categorical, "padded_dimension": 32,
+    }), encoding="utf-8")
+
+
+def check_heart_search(key: str, pipeline_dir: Path) -> None:
+    """검색 API 가 연결된 A·C 화면을 로컬 전처리기와 가짜 API로 확인한다."""
+    print(f"[시안 {key.upper()}] Heart Disease 검색 (검색 API 연결)")
     import httpx
 
+    requests: list[httpx.Request] = []
     seen: list[dict] = []
 
     def fake_api(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
         body = json.loads(request.content)
         seen.append(body)
         hits = [{"rank": i, "record_id": f"H{i:05d}", "score": 1 - i / 10} for i in range(1, body["top_k"] + 1)]
         return httpx.Response(200, json={"encrypted": False, "searched": 283, "results": hits})
 
+    path = f"/drafts/{key}/heart-search"
     example = {**heart_fields.form_values(example=True), "top_k": "5"}
-    os.environ["VEIL_SEARCH_API_URL"] = "http://search.test"
-    heart_query.transport = httpx.MockTransport(fake_api)
-    try:
-        page = client.get("/")
-        check('action="/drafts/a/heart-search"' in page.text and "검색 API 연결 대기" not in page.text, "검색 폼이 켜짐")
+    with patch.dict(os.environ, {
+        "VEIL_SEARCH_API_URL": "http://search.test",
+        "VEIL_SEARCH_API_KEY": "test-key",
+        "VEIL_PIPELINE_DIR": str(pipeline_dir),
+    }), patch.object(heart_query, "transport", httpx.MockTransport(fake_api)):
+        page = client.get("/" if key == "a" else "/drafts/c")
+        check(page.status_code == 200 and f'action="{path}"' in page.text, "검색 폼이 켜짐")
+        check("검색 API 연결 대기" not in page.text, "연결 대기 문구가 남지 않음")
+        check('data-bm-target="#results"' in page.text and "/static/shared/bm.js" in page.text, "공용 검색 스크립트와 결과 영역 연결")
+        check(re.search(r'class="bm-devbar__status"[^>]*>평문 검색 연결</span>', page.text) is not None
+              and backend.BACKEND_INFO["label"] not in page.text, "개발용 상태 막대에 평문 검색 연결 표시")
+        check_heart_fields(page.text)
         check("data-bm-search" not in client.get("/drafts/b").text, "발표 모드는 검색을 켜지 않음")
 
-        frag = client.post("/drafts/a/heart-search", json=example)
+        if key == "c":
+            check("P023" not in page.text and 'href="/drafts/c?state=empty"' in page.text, "C 실검색 화면은 검색 전 상태에서 열림")
+            legacy = client.get("/drafts/c?state=legacy")
+            check(legacy.status_code == 200 and 'action="/drafts/c/search"' in legacy.text
+                  and "P023" in legacy.text and backend.BACKEND_INFO["label"] in legacy.text,
+                  "API 연결 후에도 C 합성 데모를 열 수 있음")
+            legacy_empty = client.get("/drafts/c?state=legacy-empty")
+            check('href="/drafts/c?state=legacy-empty"' in legacy.text and legacy_empty.status_code == 200
+                  and 'action="/drafts/c/search"' in legacy_empty.text and "P023" not in legacy_empty.text,
+                  "C 합성 데모 초기화는 데모 입력 경로를 유지함")
+
+        frag = client.post(path, json=example)
         check(frag.status_code == 200 and "H00001" in frag.text and "0.900" in frag.text, "검색 조각 → 200, 결과 표시")
+        check("<html" not in frag.text.lower() and "<body" not in frag.text.lower(), "실검색 응답은 HTML 조각")
+        if key == "c":
+            check(all(f"H{i:05d}" in frag.text for i in range(1, 6)) and "H00006" not in frag.text,
+                  "C Top-5 결과를 모두 표시")
+            check("CKKS" in frag.text and "상세 의료 기록 조회" in frag.text
+                  and "data-bm-access" not in frag.text, "C 실검색 결과에 암호화 미연결 안내가 있고 상세 기록 버튼은 없음")
         sent = seen[-1] if seen else {}
         vector = sent.get("vector", [])
+        check(bool(requests) and requests[0].method == "POST" and requests[0].url.path == "/v1/search",
+              "Medical-Search-API 검색 경로 호출")
+        check(bool(requests) and requests[0].headers.get("X-API-Key") == "test-key", "설정된 검색 API 키 전달")
         check(sent.get("scheme") == "plaintext" and sent.get("top_k") == 5, "검색 서버에 scheme·top_k 전달")
         check(len(vector) == 32 and abs(sum(x * x for x in vector) - 1) < 1e-9, "32차원 L2 정규화 벡터 전달")
         check(not (set(sent) - {"scheme", "vector", "top_k"}), "원본 의료 속성은 검색 서버로 보내지 않음")
 
         thal = {**example, "thal": "7"}
-        client.post("/drafts/a/heart-search", json=thal)
-        check(seen[-1]["vector"] != vector, "thal 값이 벡터에 반영됨 (전처리기 범주 표기와 일치)")
+        changed = client.post(path, json=thal)
+        check(changed.status_code == 200 and len(seen) == 2 and seen[-1]["vector"] != vector,
+              "thal 값이 벡터에 반영됨 (전처리기 범주 표기와 일치)")
 
-        optional = client.post("/drafts/a/heart-search", json={**example, "ca": "", "thal": ""})
+        optional = client.post(path, json={**example, "ca": "", "thal": ""})
         check(optional.status_code == 200, "선택 입력(ca·thal)을 비워도 검색")
 
-        bad = client.post("/drafts/a/heart-search", json={**example, "age": "abc", "sex": "9", "chol": ""})
+        request_count = len(seen)
+        bad = client.post(path, json={**example, "age": "abc", "sex": "9", "chol": ""})
         check(bad.status_code == 422 and 'data-bm-invalid="age,chol,sex"' in bad.text, "잘못된 입력 → 422, 필드 표시")
+        check(len(seen) == request_count, "유효하지 않은 입력은 검색 API에 전송하지 않음")
 
-        heart_query.transport = httpx.MockTransport(lambda request: httpx.Response(503))
-        down = client.post("/drafts/a/heart-search", json=example)
+        with patch.object(heart_query, "transport", httpx.MockTransport(lambda request: httpx.Response(503))):
+            down = client.post(path, json=example)
         check(down.status_code == 502 and 'role="alert"' in down.text, "검색 서버 오류 → 502 안내")
-    finally:
-        heart_query.transport = None
-        del os.environ["VEIL_SEARCH_API_URL"]
-    check(client.post("/drafts/a/heart-search", json=example).status_code == 404, "API 주소가 없으면 검색 경로도 닫힘")
+    check(client.post(path, json=example).status_code == 404, "API 주소가 없으면 검색 경로도 닫힘")
 
 
 def main() -> int:
@@ -202,13 +266,18 @@ def main() -> int:
     if unknown:
         print(f"없는 시안: {unknown}")
         return 2
-    check_api()
-    for key in keys:
-        check_draft(key)
-        if key in ("a", "b"):
-            check_heart_draft(key)
-        if key == "a":
-            check_heart_search()
+    with patch.dict(os.environ, {"VEIL_SEARCH_API_URL": ""}), TemporaryDirectory() as temporary_dir:
+        check_api()
+        for key in keys:
+            check_draft(key)
+            if key in ("a", "b"):
+                check_heart_draft(key)
+        connected = [key for key in dict.fromkeys(keys) if key in ("a", "c")]
+        if connected:
+            pipeline_dir = Path(temporary_dir)
+            write_preprocessor_fixture(pipeline_dir)
+            for key in connected:
+                check_heart_search(key, pipeline_dir)
     print()
     if failures:
         print(f"실패 {len(failures)}건")

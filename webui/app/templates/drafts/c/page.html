@@ -35,7 +35,7 @@
           <p class="step__lead">UCI Heart Disease 데이터의 의료 특징 13개를 사용합니다.</p>
 
           {% if heart_search %}
-          <form id="c-heart-form" class="form" method="post" data-bm-search data-heart-inputs action="/drafts/c/heart-search" data-bm-target="#results" novalidate>
+          <form id="c-heart-form" class="form" method="post" data-bm-search data-heart-inputs action="{{ urls.heart_search }}" data-bm-target="#results" novalidate>
           {% else %}
           <div id="c-heart-form" class="form" data-heart-inputs>
           {% endif %}
@@ -98,7 +98,8 @@
             {% endif %}
             <div class="form__foot">
               <p class="form__note">현재 검색은 평문 코사인 유사도 기반이며, CKKS 암호화는 아직 적용되지 않았습니다.</p>
-              <a class="link" href="/drafts/c?state=empty">입력 초기화</a>
+              <a class="link" href="{{ urls.empty }}">입력 초기화</a>
+              <a class="link" href="{{ urls.page }}?state=legacy">합성 데이터 데모</a>
             </div>
           {% if heart_search %}</form>{% else %}</div>{% endif %}
         </div>

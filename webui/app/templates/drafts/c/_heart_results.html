@@ -24,10 +24,12 @@
   </div>
 </section>
 {% elif result %}
-<section class="step step--process" aria-labelledby="s2-title">
+<section class="step step--process" aria-labelledby="s2-title"
+         data-heart-query='{{ result.query.inputs | tojson }}' data-heart-top-k="{{ result.top_k }}">
   {{ rail(2) }}
   <div class="step__body">
     <h2 class="step__title" id="s2-title" tabindex="-1"><span class="vh">2단계. </span>실제 데이터 검색이 완료됐어요</h2>
+    <p class="heart-stale" role="status" data-heart-stale></p>
     <p class="step__lead">입력값은 클라이언트에서 벡터화하고, 서버에서 평문 코사인 유사도를 계산했어요.</p>
     <div class="panel">
       <div class="panel__head"><h3 class="panel__name">처리 과정</h3><p class="panel__aside">암호화 검색은 아직 연결 전</p></div>
@@ -65,7 +67,7 @@
 <section class="step step--results" aria-labelledby="s3-title">
   {{ rail(3) }}
   <div class="step__body">
-    <h2 class="step__title" id="s3-title"><span class="vh">3단계. </span>가장 비슷한 기록 {{ result.results|length }}건</h2>
+    <h2 class="step__title" id="s3-title"><span class="vh">3단계. </span><span data-heart-stale-label hidden>이전 검색 · </span>가장 비슷한 기록 {{ result.results|length }}건</h2>
     <p class="step__lead">등록 의료 기록 {{ result.searched }}건 중 Top-{{ result.top_k }} 결과예요.</p>
     <p class="note" role="note">유사도는 수학적 특징 벡터의 유사성으로, 질병 진단이나 발병 확률을 뜻하지 않아요.</p>
     <ol class="cards" role="list">

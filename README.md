@@ -51,7 +51,7 @@ VEIL의 의료 기록 검색 인터페이스입니다. 기본 화면(A)에는 Cl
 
 ## 검색 API 연결
 
-검색 서버 주소와 전처리기가 둘 다 있으면 A 화면의 검색 버튼이 켜집니다. 하나라도 없으면 "검색 API 연결 대기" 상태로 열립니다.
+검색 서버 주소와 전처리기가 둘 다 있으면 A 의료진 화면과 C 단계형 가이드에서 평문 검색을 사용할 수 있습니다. 설정이 없으면 A는 검색 API 연결 대기, C는 합성 데이터 데모로 열립니다. C의 데모는 설정이 있어도 `/drafts/c?state=legacy`에서 열 수 있습니다.
 
 1. Medical-Data-Pipeline에서 `python preprocess.py --pad-to 32 --query-count 20`을 실행하고, 산출물 폴더(`data/processed/heart`)의 내용을 `webui/.pipeline-data/`에 복사합니다. 다른 위치에 두려면 `VEIL_PIPELINE_DIR`로 지정합니다.
 2. Medical-Search-API를 같은 산출물 폴더로 실행합니다.

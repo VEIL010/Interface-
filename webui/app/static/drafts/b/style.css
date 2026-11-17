@@ -228,7 +228,8 @@ b { font-weight: 700; color: var(--ink); }
 }
 
 /* 검사 항목별 묶음: 묶음마다 입력란 수(--n)에 비례한 폭을 갖고, 자리가 모자라면 묶음째 다음 줄로 간다 */
-.query__form--preview { gap: var(--s-5) var(--s-8); }
+.query__form--preview,
+.query__form--heart { gap: var(--s-5) var(--s-8); }
 .qgroup {
   --cell: 166px;
   flex: var(--n) 1 calc(var(--n) * var(--cell) + (var(--n) - 1) * var(--s-3));
@@ -442,6 +443,31 @@ b { font-weight: 700; color: var(--ink); }
 }
 .runbar__meta { color: var(--ink-2); font-size: var(--fs-13); line-height: 1.5; }
 .runbar__meta b { font-family: var(--mono); }
+
+/* 지난 검색 안내 (13개 속성 실검색). 비어 있을 때도 읽기 프로그램이 알 수 있게 접근성 트리에는 남기고
+   눈에만 숨긴다 (role="status" 가 처음부터 있어야 바뀐 글자를 읽어 준다) */
+.stale:not(:empty) {
+  flex: 1 0 100%;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--deny);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--deny);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.stale:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* 지난 검색의 결과 목록은 흐리게 (shared/heart-stale.js 가 data-stale 을 붙인다) */
+.lanes .hits { transition: opacity 0.15s ease; }
+.lanes[data-stale] .hits { opacity: 0.45; }
 
 .run-summary, .run-summary p {
   display: flex;
@@ -934,6 +960,9 @@ b { font-weight: 700; color: var(--ink); }
 .hit__req:disabled { border-style: dashed; color: var(--ink-2); cursor: progress; }
 .hit__req[data-bm-busy] .hit__req-idle { visibility: hidden; }
 .hit__req[data-bm-busy] .hit__req-busy { visibility: visible; }
+
+/* 상세 기록 조회가 연결되지 않은 실검색: 버튼 자리에 글자만 */
+.hit__none { color: var(--ink-2); font-size: var(--fs-12); line-height: 1.4; text-align: right; }
 
 /* 유사도 막대가 행의 밑줄을 겸한다 */
 .hit__bar { height: 2px; background: var(--line); }

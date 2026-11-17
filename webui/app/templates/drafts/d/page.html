@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="{{ asset('drafts/' ~ draft.key ~ '/style.css') }}">
 </head>
 <body>
+{#- 두 가지로 그린다: 13개 속성 실검색(heart_fields, 검색 API 연결) · 합성 데이터 데모(그 밖) -#}
+{%- set heart = heart_fields is defined and heart_fields %}
 <div class="page">
 
   {# ── 머리: 좌측 열(A)은 맥락, 우측 열(B)은 데이터. 아래 모든 행이 같은 두 열을 따른다. ── #}
@@ -19,10 +21,35 @@
     <div class="row mast__facts">
       <div class="col-a fact fact--mode">
         <p class="fact__k">백엔드</p>
+        {% if heart %}
+        <p class="fact__mode st st--substituted"><span class="st__mark" aria-hidden="true"></span>평문 검색 · Medical-Search-API</p>
+        <p class="fact__note">13개 의료 속성을 이 서버에서 벡터로 바꾼 뒤 검색 API에서 평문 코사인 유사도로 검색합니다. 암호화 단계는 아직 연결되지 않았습니다. <a href="{{ urls.page }}?state=legacy">합성 데이터 데모</a></p>
+        {% else %}
         <p class="fact__mode st {% if meta.backend.encrypted %}st--done{% else %}st--substituted{% endif %}"><span class="st__mark" aria-hidden="true"></span>{{ meta.backend.label }}</p>
         <p class="fact__note">{% if meta.backend.encrypted %}입력값은 이 기기에서 암호화된 뒤 서버로 전송됩니다.{% else %}지금은 mock 백엔드입니다. 암호화 단계가 연결되기 전이라 평문으로 계산합니다.{% endif %}</p>
+        {% endif %}
       </div>
       <dl class="col-b facts">
+        {% if heart %}
+        {#- 검색 API 의 /v1/meta 로 읽은 등록 DB. 닿지 않으면 "확인 못 함".
+            차원은 등록 DB 값을 쓰고, 이 서버의 전처리기와 다르면 검색이 실패하므로 알린다 -#}
+        {%- set db_dim = heart_dataset.dimension if heart_dataset else heart_dim %}
+        <div class="fact">
+          <dt class="fact__k">데이터</dt>
+          <dd class="fact__v"><span class="fact__text">{{ heart_dataset.name if heart_dataset else 'Medical-Search-API 등록 DB' }}</span></dd>
+        </div>
+        <div class="fact">
+          <dt class="fact__k">등록 기록</dt>
+          <dd class="fact__v">{% if heart_dataset %}{{ '{:,}'.format(heart_dataset.records) }}<span class="unit">건</span>{% else %}<span class="pending">확인 못 함</span>{% endif %}</dd>
+        </div>
+        <div class="fact">
+          <dt class="fact__k">특징</dt>
+          <dd class="fact__v">{{ heart_fields|length }}<span class="unit">개 속성</span>{% if db_dim %} → {{ db_dim }}<span class="unit">차원</span>{% endif %}</dd>
+          {%- if heart_dataset and heart_dim and heart_dataset.dimension != heart_dim %}
+          <dd class="fact__warn">이 서버의 전처리기는 {{ heart_dim }}차원이라 등록 DB({{ heart_dataset.dimension }}차원)와 맞지 않습니다. 검색이 실패합니다.</dd>
+          {%- endif %}
+        </div>
+        {% else %}
         <div class="fact">
           <dt class="fact__k">데이터</dt>
           <dd class="fact__v"><span class="fact__text">{{ meta.dataset.label }}</span></dd>
@@ -35,6 +62,7 @@
           <dt class="fact__k">특징</dt>
           <dd class="fact__v">{{ meta.dataset.feature_dim }}<span class="unit">차원</span></dd>
         </div>
+        {% endif %}
       </dl>
     </div>
   </header>
@@ -43,7 +71,7 @@
     <div class="row bench">
 
       {# ── 01 질의 (정적, 교체 영역 밖) ── #}
-      <form class="col-a query" data-bm-search action="{{ urls.search }}" data-bm-target="#results" novalidate aria-labelledby="h-query">
+      <form class="col-a query" data-bm-search{% if heart %} data-heart-form{% endif %} action="{{ urls.heart_search if heart else urls.search }}" data-bm-target="#results" novalidate aria-labelledby="h-query">
         <header class="head">
           <span class="head__no" aria-hidden="true">01</span>
           <h2 class="head__title" id="h-query">질의</h2>
@@ -52,6 +80,38 @@
 
         <div class="query__body">
           <div class="query__group">
+            {% if heart %}
+            {#- 13개 속성: 의료진 화면과 같은 검사 항목 묶음 -#}
+            <fieldset class="fs">
+              <legend class="fs__legend">환자 정보 입력</legend>
+              <div class="groups">
+                {% for g in heart_groups %}
+                <fieldset class="fs fs--group">
+                  <legend class="fs__legend fs__legend--group">{{ g.title }}</legend>
+                  <div class="fields">
+                    {% for f in g.fields %}
+                    <div class="field">
+                      <label class="field__label" for="f-{{ f.key }}">{{ f.label }}{% if f.unit %}<span class="vh"> ({{ f.unit }})</span>{% endif %}</label>
+                      {% if f.options %}
+                      <select class="field__input field__input--select" id="f-{{ f.key }}" name="{{ f.key }}" aria-describedby="h-{{ f.key }}"{% if error and error.fields[f.key] %} aria-invalid="true"{% endif %}>
+                        <option value="">{{ '미입력' if not f.required else '선택' }}</option>
+                        {% for value, label in f.options %}
+                        <option value="{{ value }}"{% if form[f.key]|string == value|string %} selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                      {% else %}
+                      <input class="field__input{% if not f.unit %} field__input--bare{% endif %}" id="f-{{ f.key }}" name="{{ f.key }}" type="number" inputmode="{{ 'numeric' if f.step == '1' else 'decimal' }}" step="{{ f.step }}"{% if f.min is not none %} min="{{ f.min }}"{% endif %}{% if f.max is not none %} max="{{ f.max }}"{% endif %} value="{{ form[f.key] }}" autocomplete="off" aria-describedby="h-{{ f.key }}"{% if error and error.fields[f.key] %} aria-invalid="true"{% endif %}>
+                      {% if f.unit %}<span class="field__unit" aria-hidden="true">{{ f.unit }}</span>{% endif %}
+                      {% endif %}
+                      <span class="field__hint" id="h-{{ f.key }}"><span class="field__flag">확인 필요, </span>{{ f.en }}{% if not f.required %} · 선택 입력{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </fieldset>
+                {% endfor %}
+              </div>
+            </fieldset>
+            {% else %}
             <fieldset class="fs">
               <legend class="fs__legend">환자 정보 입력</legend>
               <div class="fields">
@@ -65,6 +125,7 @@
                 {% endfor %}
               </div>
             </fieldset>
+            {% endif %}
 
             <fieldset class="fs">
               <legend class="fs__legend">결과 개수 (Top-K)</legend>
@@ -82,7 +143,7 @@
               <legend class="fs__legend">방식</legend>
               <div class="seg seg--method">
                 {% for m in meta.methods %}
-                <input class="seg__input" type="radio" id="m-{{ m.key }}" name="method" value="{{ m.key }}"{% if form.method == m.key %} checked{% endif %}{% if not m.available %} disabled{% endif %}>
+                <input class="seg__input" type="radio" id="m-{{ m.key }}" name="method" value="{{ m.key }}"{% if (form.method or 'plaintext') == m.key %} checked{% endif %}{% if not m.available %} disabled{% endif %}>
                 <label class="seg__label" for="m-{{ m.key }}">
                   <span class="method__name">{{ m.label }}</span>
                   <span class="method__role">{{ m.role }}</span>
@@ -100,7 +161,7 @@
                 </span>
                 <svg class="run__ico" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
               </button>
-              <a class="run__reset" href="{{ urls.empty }}">입력 초기화</a>
+              <a class="run__reset" href="{{ urls.page if heart else urls.empty }}">{{ '예시 입력으로 돌아가기' if heart else '입력 초기화' }}</a>
             </div>
           </div>
         </div>
@@ -131,12 +192,17 @@
           </div>
           <div class="cond__row">
             <dt>이 콘솔</dt>
+            {% if heart %}
+            {%- set db_dim = heart_dataset.dimension if heart_dataset else heart_dim %}
+            <dd>{{ heart_dataset.name if heart_dataset else 'Medical-Search-API 등록 DB' }}{% if db_dim %} · {{ db_dim }}차원{% endif %}{% if heart_dataset %} · 등록 {{ '{:,}'.format(heart_dataset.records) }}건{% endif %} · 평문 검색</dd>
+            {% else %}
             <dd>{{ meta.dataset.label }} · {{ meta.dataset.feature_dim }}차원 · 등록 {{ '{:,}'.format(meta.dataset.records) }}건</dd>
+            {% endif %}
           </div>
         </dl>
+        {#- 이 콘솔의 측정값은 위 03·04 표에 있고 여기에는 그리지 않는다 (데이터 · 차원 · 방식이 달라 같은 축에 놓을 수 없다) -#}
         <ul class="legend">
           <li><span class="legend__sw legend__sw--ink" aria-hidden="true"></span>검정 막대 · 논문 보고값</li>
-          <li><span class="legend__sw legend__sw--signal" aria-hidden="true"></span>주황 막대 · 이 콘솔의 측정값</li>
         </ul>
       </div>
 
@@ -181,5 +247,6 @@
 {% include "shared/_devbar.html" %}
 <script src="{{ asset('shared/bm.js') }}" defer></script>
 <script src="{{ asset('drafts/' ~ draft.key ~ '/extra.js') }}" defer></script>
+{% if heart %}<script src="{{ asset('shared/heart-stale.js') }}" defer></script>{% endif %}
 </body>
 </html>

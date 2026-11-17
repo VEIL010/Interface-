@@ -6,10 +6,10 @@
 화면 흐름
     GET  /                                    의료진 검색 화면 (시안 A)
     GET  /drafts                              보관된 시안 목록
-    GET  /drafts/{key}                         A·B 질의 입력 또는 C·D 보관 시안
+    GET  /drafts/{key}                         13개 속성 질의 화면 (?state=legacy 는 합성 데이터 데모)
     POST /drafts/{key}/search                  기존 데모 검색 결과 HTML 조각
-    POST /drafts/a/heart-search                13개 속성 질의 → Medical-Search-API 검색 결과 HTML 조각
-    POST /drafts/c/heart-search                단계형 가이드의 Medical-Search-API 검색 결과 HTML 조각
+    POST /drafts/{a|b|c|d}/heart-search        13개 속성 질의 → Medical-Search-API 검색 결과 HTML 조각
+                                              (B·D 는 단계 상태와 측정 시간까지 그린다)
     POST /drafts/{key}/records/{id}/access     상세 기록 HTML 조각 (_record.html)
 
 같은 기능의 JSON API 는 /api/* 에 있다 (/api/docs 참고).
@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -62,6 +63,17 @@ DRAFTS = {
         "tagline": "방식별 결과와 측정값을 비교하는 대시보드",
     },
 }
+
+
+# 13개 속성 실검색(Medical-Search-API)을 그리는 결과 조각. B·D 는 합성 데모와 같은 조각을 쓴다.
+HEART_RESULTS = {
+    "a": "drafts/a/_results.html",
+    "b": "drafts/b/_results.html",
+    "c": "drafts/c/_heart_results.html",
+    "d": "drafts/d/_results.html",
+}
+# 단계 상태 · 측정 시간까지 보여 주는 시안
+PIPELINE_DRAFTS = ("b", "d")
 
 
 def asset(path: str) -> str:
@@ -157,25 +169,42 @@ def draft_archive(request: Request):
     )
 
 
+def _uses_legacy(key: str, state: str | None) -> bool:
+    """합성 데이터 데모를 그릴지.
+
+    A·B 는 13개 속성 화면이 기본이다 (검색 API 가 없으면 '연결 대기'로 보여 준다).
+    C·D 는 검색 API 가 연결되어 있을 때만 13개 속성 화면이고, 아니면 합성 데이터 데모다.
+    ?state=legacy 로는 언제든 합성 데이터 데모를 연다.
+    """
+    if key in ("a", "b"):
+        return state == "legacy"
+    return state in ("legacy", "legacy-empty") or not heart_query.enabled()
+
+
 @app.get("/drafts/{key}", response_class=HTMLResponse)
 def draft_page(request: Request, key: str, state: str | None = None):
     if key not in DRAFTS:
         return _not_found("없는 시안입니다.")
     if not _draft_ready(key):
         return _not_found(f"시안 {DRAFTS[key]['letter']} 는 아직 준비 중입니다.")
-    c_legacy = key == "c" and (state in ("legacy", "legacy-empty") or not heart_query.enabled())
-    if (key in ("a", "b") and state != "legacy") or (key == "c" and not c_legacy):
-        form = {**heart_fields.form_values(example=key == "b"), "top_k": heart_query.DEFAULT_TOP_K}
+    legacy = _uses_legacy(key, state)
+    if not legacy:
+        # 발표 모드(B)와 벤치마크 콘솔(D)은 바로 실행해 볼 수 있게 예시 값으로 채운다
+        form = {**heart_fields.form_values(example=key in PIPELINE_DRAFTS), "top_k": heart_query.DEFAULT_TOP_K}
         context = _heart_context(key, form)
-    elif state == "empty" or (c_legacy and state == "legacy-empty"):
+    elif state in ("empty", "legacy-empty"):
         context = _draft_context(key)
     else:
         form, result, error, _ = _run_search(backend.default_form())
         context = _draft_context(key, form, _with_links(result, f"/drafts/{key}/records"), error)
         context["initial_example"] = True
-    if c_legacy:
-        context["urls"]["empty"] = "/drafts/c?state=legacy-empty"
-    name = "drafts/c/legacy.html" if c_legacy else f"drafts/{key}/page.html"
+    if legacy and key in ("c", "d"):
+        # 합성 데모의 '입력 초기화'는 데모 안에 머문다
+        context["urls"]["empty"] = f"/drafts/{key}?state=legacy-empty"
+    elif legacy and key == "b":
+        # B 의 버튼은 '예시 입력으로 돌아가기'다. 합성 데모의 예시(첫 화면)로 돌아간다
+        context["urls"]["empty"] = "/drafts/b?state=legacy"
+    name = "drafts/c/legacy.html" if legacy and key == "c" else f"drafts/{key}/page.html"
     return templates.TemplateResponse(request=request, name=name, context=context)
 
 
@@ -183,13 +212,18 @@ def _heart_context(key: str, form: dict, result=None, error=None) -> dict:
     context = _draft_context(key, form, result, error)
     context["heart_fields"] = heart_fields.FIELDS
     context["heart_groups"] = heart_fields.groups()
-    # 발표 모드(B)는 목표 흐름을 보여 주는 화면이다.
-    context["heart_search"] = key in ("a", "c") and heart_query.enabled()
+    # 검색 API 가 없으면 네 시안 모두 '연결 대기'로 질의 화면만 보여 준다
+    context["heart_search"] = key in HEART_RESULTS and heart_query.enabled()
+    if key in PIPELINE_DRAFTS and context["heart_search"]:
+        # B·D 는 검색 전 · 오류 뒤에도 등록 DB 와 벡터 차원을 실제 값으로 보여 준다 (닿지 않으면 None).
+        # 페이지와 결과 조각이 같은 값을 쓰도록 여기서 넣는다. dataset_info() 는 잠시 기억해 둔다
+        context["heart_dataset"] = heart_query.dataset_info()
+        context["heart_dim"] = heart_query.dimension()
     return context
 
 
-@app.post("/drafts/a/heart-search", response_class=HTMLResponse)
-async def heart_search(request: Request):
+async def _heart_search(request: Request, key: str) -> HTMLResponse:
+    """13개 속성 질의 → 벡터화 → Medical-Search-API 검색. 시안별 결과 조각으로 응답한다."""
     if not heart_query.enabled():
         return _not_found("검색 API가 연결되지 않았습니다.")
     form, values, top_k, field_errors = heart_query.parse(await _read_json(request))
@@ -199,42 +233,46 @@ async def heart_search(request: Request):
         error, status = {"message": "입력값을 확인해 주세요.", "fields": field_errors}, 422
     else:
         try:
+            # 전처리기 적재(처음 한 번)는 질의 한 건의 전처리 시간이 아니므로 측정 전에 끝낸다
+            await run_in_threadpool(heart_query.warm_up)
+            started = time.perf_counter()
             vector = await run_in_threadpool(heart_query.vectorize, values)
+            preprocess_ms = (time.perf_counter() - started) * 1000
             found = await run_in_threadpool(heart_query.search, vector, top_k)
             result = heart_query.present(form, values, top_k, found)
+            if key in PIPELINE_DRAFTS:
+                result = heart_query.with_pipeline(result, vector, found, preprocess_ms)
         except heart_query.SearchUnavailable as exc:
             error, status = {"message": str(exc), "fields": {}}, 502
         except RuntimeError:
             error, status = {"message": "입력값을 질의 벡터로 바꾸지 못했습니다.", "fields": {}}, 500
-    context = _heart_context("a", {**form, "top_k": top_k}, result, error)
+    context = _heart_context(key, {**form, "top_k": top_k}, result, error)
     return templates.TemplateResponse(
-        request=request, name="drafts/a/_results.html", context=context, status_code=status
+        request=request, name=HEART_RESULTS[key], context=context, status_code=status
     )
+
+
+@app.post("/drafts/a/heart-search", response_class=HTMLResponse)
+async def heart_search(request: Request):
+    return await _heart_search(request, "a")
+
+
+@app.post("/drafts/b/heart-search", response_class=HTMLResponse)
+async def heart_search_b(request: Request):
+    """B 발표 모드: 세 레인에 실제 검색의 단계 상태와 측정 시간을 그린다."""
+    return await _heart_search(request, "b")
 
 
 @app.post("/drafts/c/heart-search", response_class=HTMLResponse)
 async def heart_search_c(request: Request):
     """C 단계형 가이드의 실제 13개 의료 특징 평문 검색."""
-    if not heart_query.enabled():
-        return _not_found("검색 API가 연결되지 않았습니다.")
-    form, values, top_k, field_errors = heart_query.parse(await _read_json(request))
-    result = error = None
-    status = 200
-    if field_errors:
-        error, status = {"message": "입력값을 확인해 주세요.", "fields": field_errors}, 422
-    else:
-        try:
-            vector = await run_in_threadpool(heart_query.vectorize, values)
-            found = await run_in_threadpool(heart_query.search, vector, top_k)
-            result = heart_query.present(form, values, top_k, found)
-        except heart_query.SearchUnavailable as exc:
-            error, status = {"message": str(exc), "fields": {}}, 502
-        except RuntimeError:
-            error, status = {"message": "입력값을 질의 벡터로 바꾸지 못했습니다.", "fields": {}}, 500
-    context = _heart_context("c", {**form, "top_k": top_k}, result, error)
-    return templates.TemplateResponse(
-        request=request, name="drafts/c/_heart_results.html", context=context, status_code=status
-    )
+    return await _heart_search(request, "c")
+
+
+@app.post("/drafts/d/heart-search", response_class=HTMLResponse)
+async def heart_search_d(request: Request):
+    """D 벤치마크 콘솔: 단계별 시간 · 통신량까지 측정한다."""
+    return await _heart_search(request, "d")
 
 
 @app.post("/drafts/{key}/search", response_class=HTMLResponse)

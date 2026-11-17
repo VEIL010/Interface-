@@ -532,7 +532,7 @@ b { font-weight: 700; color: var(--ink); }
    (둘만 나란한 중간 상태를 두지 않는다 — 클라이언트 레인끼리 경계선이 그어지면 틀린 그림이 된다) */
 .lanes {
   --lane-min: 340px;
-  --gut: 76px;
+  --gut: 4.75rem;   /* 76px (기본 16px). 이름표 글자처럼 rem 이라 브라우저 글자 크기를 키워도 'Enc(점수)'가 잘리지 않는다 */
   --switch: calc(var(--lane-min) * 3 + var(--gut) * 2);
   display: flex;
   flex-wrap: wrap;
@@ -599,6 +599,10 @@ b { font-weight: 700; color: var(--ink); }
 .boundary--v .boundary__label,
 .boundary--v .cross { padding-block: 6px; }
 .boundary--v .cross { flex-direction: column; gap: 6px; }
+/* 세로형 폭(--gut)은 좁다. 실검색의 긴 이름표('점수·ID (평문)')와 상태('암호화 없이 전달')가
+   잘리지 않게 어절 단위로 줄을 바꿔 가운데 맞춘다. 짧은 이름표(Enc(q) · 연결 대기)는 한 줄 그대로다 */
+.boundary--v .cross { max-width: 100%; white-space: normal; word-break: keep-all; text-align: center; }
+.boundary--v .cross__chip { height: auto; min-height: 24px; padding-block: 3px; }
 
 /* 가로형: 레인이 쌓일 때만 폭을 가진다 */
 .boundary--h {

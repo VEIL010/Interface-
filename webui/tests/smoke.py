@@ -181,7 +181,7 @@ def write_preprocessor_fixture(folder: Path) -> None:
 
 
 def check_heart_search(key: str, pipeline_dir: Path) -> None:
-    """검색 API 가 연결된 A·C 화면을 로컬 전처리기와 가짜 API로 확인한다."""
+    """검색 API 가 연결된 A·B·C·D 화면을 로컬 전처리기와 가짜 API로 확인한다."""
     print(f"[시안 {key.upper()}] Heart Disease 검색 (검색 API 연결)")
     import httpx
 
@@ -189,11 +189,14 @@ def check_heart_search(key: str, pipeline_dir: Path) -> None:
     seen: list[dict] = []
 
     def fake_api(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/v1/meta":
+            return httpx.Response(200, json={"dataset": {"name": "uci-heart-test", "records": 283, "dimension": 32}})
         requests.append(request)
         body = json.loads(request.content)
         seen.append(body)
         hits = [{"rank": i, "record_id": f"H{i:05d}", "score": 1 - i / 10} for i in range(1, body["top_k"] + 1)]
-        return httpx.Response(200, json={"encrypted": False, "searched": 283, "results": hits})
+        return httpx.Response(200, json={"encrypted": False, "searched": 283, "results": hits,
+                                         "dataset": "uci-heart-test", "elapsed_ms": 0.25})
 
     path = f"/drafts/{key}/heart-search"
     example = {**heart_fields.form_values(example=True), "top_k": "5"}
@@ -202,14 +205,25 @@ def check_heart_search(key: str, pipeline_dir: Path) -> None:
         "VEIL_SEARCH_API_KEY": "test-key",
         "VEIL_PIPELINE_DIR": str(pipeline_dir),
     }), patch.object(heart_query, "transport", httpx.MockTransport(fake_api)):
-        page = client.get("/" if key == "a" else "/drafts/c")
+        page = client.get("/" if key == "a" else f"/drafts/{key}")
         check(page.status_code == 200 and f'action="{path}"' in page.text, "검색 폼이 켜짐")
         check("검색 API 연결 대기" not in page.text, "연결 대기 문구가 남지 않음")
         check('data-bm-target="#results"' in page.text and "/static/shared/bm.js" in page.text, "공용 검색 스크립트와 결과 영역 연결")
         check(re.search(r'class="bm-devbar__status"[^>]*>평문 검색 연결</span>', page.text) is not None
               and backend.BACKEND_INFO["label"] not in page.text, "개발용 상태 막대에 평문 검색 연결 표시")
         check_heart_fields(page.text)
-        check("data-bm-search" not in client.get("/drafts/b").text, "발표 모드는 검색을 켜지 않음")
+
+        if key in ("b", "d"):
+            check("data-heart-form" in page.text and "/static/shared/heart-stale.js" in page.text,
+                  "지난 검색 안내 스크립트 연결")
+            check('value="52"' in page.text, "바로 실행할 수 있게 예시 값으로 채워 둠")
+            check("uci-heart-test" in page.text and "283" in page.text, "검색 전에도 검색 API 의 등록 DB 를 표시 (/v1/meta)")
+            legacy = client.get(f"/drafts/{key}?state=legacy")
+            check(legacy.status_code == 200 and f'action="/drafts/{key}/search"' in legacy.text
+                  and "P023" in legacy.text, "API 연결 후에도 합성 데이터 데모를 열 수 있음")
+        if key == "d":
+            check('href="/drafts/d?state=legacy-empty"' in client.get("/drafts/d?state=legacy").text,
+                  "D 합성 데모 초기화는 데모 안에 머묾")
 
         if key == "c":
             check("P023" not in page.text and 'href="/drafts/c?state=empty"' in page.text, "C 실검색 화면은 검색 전 상태에서 열림")
@@ -230,6 +244,32 @@ def check_heart_search(key: str, pipeline_dir: Path) -> None:
                   "C Top-5 결과를 모두 표시")
             check("CKKS" in frag.text and "상세 의료 기록 조회" in frag.text
                   and "data-bm-access" not in frag.text, "C 실검색 결과에 암호화 미연결 안내가 있고 상세 기록 버튼은 없음")
+        if key in ("b", "d"):
+            check(all(f"H{i:05d}" in frag.text for i in range(1, 6)) and "H00006" not in frag.text,
+                  f"{key.upper()} Top-5 결과를 모두 표시")
+            check("data-bm-access" not in frag.text, "상세 기록 조회가 없는 실검색에는 요청 버튼이 없음")
+            check("평문 대체" in frag.text and "미연결" in frag.text and "0.25 ms" in frag.text,
+                  "단계 상태(평문 대체 · 미연결)와 검색 API 가 보고한 계산 시간 표시")
+            check("data-heart-query=" in frag.text and "data-heart-stale" in frag.text, "지난 검색 비교용 값과 안내 자리")
+            check("uci-heart-test" in frag.text, "검색 API 의 등록 DB 이름 표시")
+        if key == "b":
+            check(frag.text.count('class="vec__cell"') == 32, "B 질의 벡터 q 32칸")
+            check("평문 질의 벡터 q를 그대로 받습니다" in frag.text, "B 서버 레인에 평문 벡터가 넘어간다는 사실 표시")
+            check("암호화 없이 전달" in frag.text and "암호화 없이 반환" in frag.text,
+                  "B 신뢰 경계: 평문 q · 평문 점수가 실제로 넘어감")
+            check("flow__item--out w-plain" in frag.text and "w-off" not in frag.text,
+                  "B 실검색 흐름선은 평문이 실제로 흐른 것으로 그림 ('흐르지 않음' 없음)")
+            check("요청 왕복" in frag.text and "전처리 + 서버 계산" in frag.text, "B 위쪽에 단계 합계의 뜻과 요청 왕복 표시")
+            bad_b = client.post(path, json={**example, "age": "-5"})
+            check(bad_b.status_code == 422 and bad_b.text.count('class="vec__cell"') == 32
+                  and "uci-heart-test" in bad_b.text, "B 오류 뒤에도 벡터 칸 32개와 등록 DB 이름 유지")
+            legacy_b = client.get("/drafts/b?state=legacy")
+            check('href="/drafts/b?state=legacy"' in legacy_b.text, "B 합성 데모의 '예시 입력으로 돌아가기'는 데모 안에 머묾")
+        if key == "d":
+            check(re.search(r"요청 본문 [\d.]+ (B|KB) · 응답 본문 [\d.]+ (B|KB)", frag.text) is not None,
+                  "D 방식 비교에 통신량(본문 크기) 표시")
+            check("요청 왕복" in frag.text and "전처리 + 요청 왕복" in frag.text, "D 측정 합계 · 방식 비교 시간의 뜻 표시")
+            check("검색 서버 (대체)" in frag.text, "D Top-K 수행 위치를 검색 서버로 표시")
         sent = seen[-1] if seen else {}
         vector = sent.get("vector", [])
         check(bool(requests) and requests[0].method == "POST" and requests[0].url.path == "/v1/search",
@@ -254,7 +294,39 @@ def check_heart_search(key: str, pipeline_dir: Path) -> None:
 
         with patch.object(heart_query, "transport", httpx.MockTransport(lambda request: httpx.Response(503))):
             down = client.post(path, json=example)
+            if key in ("b", "d"):
+                quiet = client.get(f"/drafts/{key}")
+                check(quiet.status_code == 200 and f'action="{path}"' in quiet.text,
+                      "등록 DB 정보(/v1/meta)를 못 읽어도 화면은 열림")
         check(down.status_code == 502 and 'role="alert"' in down.text, "검색 서버 오류 → 502 안내")
+
+        if key in ("b", "d"):
+            def reply_with(elapsed):
+                def handler(request: httpx.Request) -> httpx.Response:
+                    if request.url.path == "/v1/meta":
+                        return httpx.Response(200, json={"dataset": {"name": "uci-heart-test", "records": 283, "dimension": 32}})
+                    hits = [{"rank": 1, "record_id": "H00001", "score": 0.9}]
+                    body = {"encrypted": False, "searched": 283, "results": hits}
+                    if elapsed is not None:
+                        body["elapsed_ms"] = elapsed
+                    return httpx.Response(200, json=body)
+                return handler
+
+            for elapsed, label in ((None, "보고 없음"), (-50, "음수"), (True, "참/거짓")):
+                with patch.object(heart_query, "transport", httpx.MockTransport(reply_with(elapsed))):
+                    older = client.post(path, json=example)
+                check(older.status_code == 200 and "H00001" in older.text and "서버 계산 시간 미보고" in older.text
+                      and "-50" not in older.text,
+                      f"검색 API 계산 시간이 쓸 수 없는 값({label})이면 요청 왕복으로 대신하고 그렇다고 표시")
+
+        if key == "d":
+            def other_dim(request: httpx.Request) -> httpx.Response:
+                return httpx.Response(200, json={"dataset": {"name": "uci-heart-test", "records": 283, "dimension": 64}})
+
+            with patch.object(heart_query, "transport", httpx.MockTransport(other_dim)):
+                mismatch = client.get("/drafts/d")
+            check("맞지 않습니다" in mismatch.text and "64" in mismatch.text,
+                  "D: 전처리기와 등록 DB 의 차원이 다르면 경고")
     check(client.post(path, json=example).status_code == 404, "API 주소가 없으면 검색 경로도 닫힘")
 
 
@@ -272,7 +344,7 @@ def main() -> int:
             check_draft(key)
             if key in ("a", "b"):
                 check_heart_draft(key)
-        connected = [key for key in dict.fromkeys(keys) if key in ("a", "c")]
+        connected = [key for key in dict.fromkeys(keys) if key in ("a", "b", "c", "d")]
         if connected:
             pipeline_dir = Path(temporary_dir)
             write_preprocessor_fixture(pipeline_dir)

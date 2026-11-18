@@ -27,13 +27,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
-from . import backend, heart_fields, heart_query
+from . import backend, enrollment, heart_fields, heart_query
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_DIR = BASE_DIR / "templates"
 
 app = FastAPI(title="Blind-Match UI 시안", docs_url="/api/docs", redoc_url=None)
+app.mount("/datasets", enrollment.create_app(), name="datasets")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
 

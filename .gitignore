@@ -5,3 +5,6 @@ __pycache__/
 .env
 .env.*
 .pipeline-data/
+
+# Institution-local enrollment artifacts (never upload patient data or fitted transformers)
+.dataset-client/

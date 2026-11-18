@@ -237,6 +237,13 @@ def search(vector: list[float], top_k: int) -> dict:
             round_trip_ms = (time.perf_counter() - started) * 1000
     except httpx.HTTPError as exc:
         raise SearchUnavailable("검색 서버에 연결하지 못했습니다.") from exc
+    if response.status_code == 409:
+        try:
+            code = response.json().get("error", {}).get("code")
+        except (ValueError, AttributeError):
+            code = None
+        if code in ("dataset_changed", "dataset_reference_required", "dataset_mismatch"):
+            raise SearchUnavailable("CSV로 새 DB가 등록되었습니다. 상단 또는 하단의 ‘등록 DB 검색’에서 등록본에 맞는 전처리기로 검색해 주세요.")
     if response.status_code != 200:
         raise SearchUnavailable(f"검색 서버가 요청을 처리하지 못했습니다 (HTTP {response.status_code}).")
     try:

@@ -4,6 +4,8 @@
   {% for d in drafts %}
   <a href="/drafts/{{ d.key }}" title="시안 {{ d.letter }} · {{ d.name }}"{% if draft is defined and d.key == draft.key %} aria-current="page"{% endif %}>{{ d.letter }}</a>
   {% endfor %}
+  <a href="/datasets/register" title="CSV 데이터셋 일괄 등록">DB 등록</a>
+  <a href="/datasets/" title="등록본 전처리기로 검색">등록 DB 검색</a>
   {% if heart_search %}
   <span class="bm-devbar__status" title="Medical-Search-API를 사용하는 평문 검색">평문 검색 연결</span>
   {% elif draft is defined and not heart_fields %}

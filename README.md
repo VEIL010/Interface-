@@ -1,6 +1,6 @@
 # VEIL Interface
 
-VEIL의 의료 기록 검색 인터페이스입니다. A·B·C·D 네 시안 모두 검색 API가 연결되면 Cleveland 의료 속성 13개로 유사 기록을 찾습니다. 현재 검색은 공개 연구 데이터에 대한 평문 코사인 유사도 검색입니다.
+VEIL의 의료 기록 검색 인터페이스입니다. A·B·C·D 네 시안 모두 검색 API가 연결되면 Cleveland 의료 속성 13개로 유사 기록을 찾습니다. CSV 데이터셋을 일괄 등록하고 등록본별 전처리기로 검색하는 화면도 제공합니다. 현재 검색은 공개·합성 연구 데이터에 대한 평문 코사인 유사도 검색입니다.
 
 ## 화면과 테스트 경로
 
@@ -14,13 +14,13 @@ VEIL의 의료 기록 검색 인터페이스입니다. A·B·C·D 네 시안 모
 | [C · 합성 데이터 데모](http://127.0.0.1:8123/drafts/c?state=legacy) | 합성 데이터 Top-3 검색과 상세 기록 열람 허용·거부 시연 |
 | [D · 벤치마크 콘솔](http://127.0.0.1:8123/drafts/d) | API 설정 시 실제 검색의 단계별 시간(전처리·검색 API 계산·요청 왕복)과 통신량을 측정. 설정이 없으면 합성 데이터 데모 |
 | [D · 합성 데이터 데모](http://127.0.0.1:8123/drafts/d?state=legacy) | 합성 데이터 검색과 단계별 실행 시간 확인 |
-| [DB · 데이터셋 등록](http://127.0.0.1:8124/register) | 별도 로컬 프로토타입에서 CSV 전체 행 검증·인코딩·평문 등록 |
-| [DB · 등록본 검색](http://127.0.0.1:8124/) | 일괄 등록한 데이터셋에서 유사 기록 Top-K 검색 |
+| [DB · 데이터셋 등록](http://127.0.0.1:8123/datasets/register) | CSV 전체 행 검증·인코딩 후 Medical-Search-API에 평문 등록 |
+| [DB · 등록본 검색](http://127.0.0.1:8123/datasets/) | 일괄 등록한 데이터셋에서 유사 기록 Top-K 검색 |
 | [A · 의료진 검색](http://127.0.0.1:8123/) | 13개 입력과 Top-K 결과를 한 화면에서 확인 |
 
 화면 하단의 **목록**에서 [전체 시안](http://127.0.0.1:8123/drafts)을 열 수 있습니다.
 
-DB 등록·등록본 검색은 별도 `VEIL-Bulk-Local` 폴더의 `start.ps1`로 실행합니다. 이 저장소의 기본 실행 명령에는 포함되지 않습니다.
+DB 등록·등록본 검색은 같은 Interface 서버의 `/datasets/register`, `/datasets/`에 포함됩니다. 화면 상단 또는 하단의 **DB 등록**, **등록 DB 검색**으로 이동합니다. 실제 등록에는 아래 [DB 일괄 등록 연결](#db-일괄-등록-연결) 설정이 필요합니다.
 
 ## 화면 미리보기
 
@@ -73,11 +73,11 @@ DB 등록·등록본 검색은 별도 `VEIL-Bulk-Local` 폴더의 `start.ps1`로
 
 </details>
 
-### DB · 데이터 일괄 등록 (로컬 프로토타입)
+### DB · 데이터 일괄 등록
 
 **CSV 선택 → 의료 속성 13개 열 연결 → 전체 행 검증 → 일괄 인코딩·등록** 순서로 데이터를 넣습니다. DB의 데이터를 CSV로 내보내서 사용할 수 있으며, DB 직접 접속이나 SQL 스키마 파일 등록은 아직 지원하지 않습니다. UTF-8 CSV 최대 1 MiB·2,000행을 처리합니다.
 
-아래는 합성 데이터 24행을 32차원으로 인코딩하고 로컬 수신 서버에 등록한 화면입니다. 완료 후 첫 등록 행으로 자동 검색해 기록 ID와 유사도를 확인하고, **검색 화면에서 찾아보기**로 등록본 검색 화면에 이동합니다.
+아래는 같은 등록 UI로 합성 데이터 24행을 32차원으로 인코딩한 화면입니다. 현재 수신 서버는 `Medical-Search-API`가 담당합니다. 완료 후 첫 등록 행으로 자동 검색해 기록 ID와 유사도를 확인하고, **검색 화면에서 찾아보기**로 등록본 검색 화면에 이동합니다.
 
 ![DB 일괄 등록 완료. 합성 데이터 24행의 CSV 검증, 32차원 일괄 인코딩, CKKS 미연결, 로컬 수신 서버 등록 및 첫 행 검색 확인 결과가 표시됩니다.](docs/screenshots/db-3-registered.jpg)
 
@@ -94,7 +94,7 @@ CSV 파일을 선택하거나 **합성 예시 불러오기**를 누릅니다. �
 
 </details>
 
-이 기능은 **별도 로컬 프로토타입**이며 구현 코드는 아직 `Interface-`에 포함되어 있지 않습니다. 현재 **CKKS 암호화는 미연결**이고, 정규화된 **평문 벡터**와 기록 ID·등록본 정보를 로컬 수신 서버에 보냅니다. 새 등록은 이 테스트 서버의 활성 등록본만 교체하며, 기존 A·B·C·D의 검색 DB는 바꾸지 않습니다.
+현재 **CKKS 암호화는 미연결**이며, 정규화된 **평문 벡터**와 기록 ID·등록본 정보를 `Medical-Search-API`에 보냅니다. 새 등록은 연결한 API의 활성 DB를 교체하고 이전 등록본 파일은 보관합니다. 새 DB는 **등록 DB 검색**에서 검색합니다. 기존 A·B·C·D의 고정 전처리기로 새 DB를 검색하는 요청은 서버가 거절하므로 잘못된 전처리기를 섞지 않습니다. 합성 데이터 데모는 계속 사용할 수 있습니다.
 
 ### A · 의료진 검색
 
@@ -106,9 +106,9 @@ CSV 파일을 선택하거나 **합성 예시 불러오기**를 누릅니다. �
 
 | 저장소 | 역할 |
 | --- | --- |
-| [Interface-](https://github.com/VEIL010/Interface-) | 의료 속성 입력과 검색 결과 표시 |
+| [Interface-](https://github.com/VEIL010/Interface-) | 의료 속성 입력, CSV 등록·기관 내 인코딩, 검색 결과 표시 |
 | [Medical-Data-Pipeline](https://github.com/VEIL010/Medical-Data-Pipeline) | 의료 데이터 전처리와 벡터화 |
-| [Medical-Search-API](https://github.com/VEIL010/Medical-Search-API) | 검색 요청 처리와 검색 엔진 연동 |
+| [Medical-Search-API](https://github.com/VEIL010/Medical-Search-API) | 벡터 DB 일괄 등록·활성화, 검색 요청 처리와 검색 엔진 연동 |
 | [BlindMatchCore](https://github.com/VEIL010/BlindMatchCore) | CKKS 암호화와 HE-C³ 연산 |
 
 의료기관 측 인터페이스가 13개 속성을 질의 벡터로 변환합니다. 검색 API는 평문 벡터를 등록 벡터와 비교하고 순위, 기록 ID, 유사도 점수를 반환합니다. B의 CKKS·HE-C³ 흐름은 설계 시연이며, 실제 검색에서는 해당 단계를 미연결 또는 평문 대체로 표시합니다.
@@ -145,6 +145,38 @@ $env:VEIL_PIPELINE_DIR = (Resolve-Path "..\Medical-Data-Pipeline\data\processed\
 
 전처리기를 만들 때는 `webui/requirements.txt`와 같은 scikit-learn 버전을 사용하고, 팀에서 생성한 `preprocessor.joblib`을 사용합니다.
 
+## DB 일괄 등록 연결
+
+세 저장소를 같은 상위 폴더에 준비합니다: `Interface-`, `Medical-Data-Pipeline`, `Medical-Search-API`. 인코딩 코드는 Pipeline에서 읽으며 이 저장소에 복제하지 않습니다. SQL 연결·스키마 파일만 등록하는 기능은 아직 없으며, 실제 행이 있는 UTF-8 CSV를 사용합니다.
+
+1. [Medical-Search-API 실행 안내](https://github.com/VEIL010/Medical-Search-API#실행)에 따라 API를 `127.0.0.1:8200`에서 실행합니다. 등록을 허용하려면 API 쪽에 `VEIL_ENROLLMENT_API_KEY` 또는 `VEIL_API_KEY`를 설정합니다. 기존 데이터 파일이 없어도 등록 키가 설정되면 빈 서버에서 첫 등록을 시작할 수 있습니다.
+2. Interface 터미널에서는 아래처럼 같은 키와 API 주소를 설정한 뒤 [로컬 실행](#로컬-실행) 명령으로 시작합니다. 키는 브라우저로 전달하지 않습니다.
+
+```powershell
+$env:VEIL_SEARCH_API_URL = "http://127.0.0.1:8200"
+$env:VEIL_ENROLLMENT_API_KEY = "<API의 등록 키와 같은 값>"
+# API 검색도 인증하는 경우 API의 VEIL_API_KEY와 같은 값을 설정합니다.
+$env:VEIL_SEARCH_API_KEY = "<API의 검색 키와 같은 값>"
+# Pipeline을 다른 위치에 두었다면 preprocess.py가 있는 폴더를 지정합니다.
+$env:VEIL_PIPELINE_SOURCE_DIR = (Resolve-Path "..\Medical-Data-Pipeline").Path
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir webui --host 127.0.0.1 --port 8123
+```
+
+3. [DB 등록](http://127.0.0.1:8123/datasets/register)에서 **합성 예시 불러오기 → 전체 행 검증 → 평문 등록 동의 → 평문으로 등록**을 누릅니다. 예시 24행 전체로 전처리기를 학습하고, 첫 행이 검색되는지 자동으로 확인합니다.
+4. [등록 DB 검색](http://127.0.0.1:8123/datasets/)에서 의료 속성과 Top-K를 입력합니다. 이 화면은 활성 등록본의 전처리기만 사용하며, DB가 교체되거나 파일 해시가 다르면 검색을 중단합니다.
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `VEIL_SEARCH_API_URL` | DB 등록·검색 API 주소. DB 기능은 기본 `http://127.0.0.1:8200`이며 현재 HTTP 루프백 주소만 허용합니다 |
+| `VEIL_ENROLLMENT_API_KEY` | `/v1/datasets` 등록 키. 없으면 `VEIL_API_KEY`를 사용합니다. 둘 다 없으면 등록을 거절합니다 |
+| `VEIL_SEARCH_API_KEY` | `/v1/meta`, `/v1/search` 인증 키. 없으면 `VEIL_API_KEY`를 사용합니다. API 검색 인증이 꺼져 있으면 생략합니다 |
+| `VEIL_PIPELINE_SOURCE_DIR` | 신뢰할 수 있는 `preprocess.py`가 있는 소스 폴더. 기본값은 형제 폴더 `Medical-Data-Pipeline`입니다. 기존 `VEIL_PIPELINE_DIR`(산출물 경로)과 다릅니다 |
+| `VEIL_DATASET_CLIENT_DIR` | 등록본별 전처리기·해시·행 번호 매핑의 기관 내 저장 경로. 기본 `webui/.dataset-client`, Git에서 제외됩니다 |
+
+CSV 원본과 의료 속성은 검색 API에 보내지 않습니다. 등록용 전체 행을 사용하고 평가 질의로 분할하지 않으며, 정답(`target`, `num`)·식별자 열을 특징에 매핑하는 것도 거절합니다. CSV와 검증 행은 기관 서비스의 메모리에만 두고, 전처리기와 등록본 정보만 로컬에 저장합니다. 검증 결과는 30분 또는 서버 재시작 후 다시 만들어야 합니다. 전처리기는 학습 통계가 있는 기관 데이터이므로 외부에서 받은 `.joblib`로 바꾸지 않습니다.
+
+기관 서비스와 검색 API는 각각 **단일 프로세스**로 실행합니다(`--workers` 추가 금지). 여러 사용자의 동시 운영, 사용자별 접근 권한, 실제 의료 데이터 보호, CKKS 등록은 아직 구현 범위에 포함되지 않습니다. 등록본을 다른 컴퓨터에서 검색하려면 해당 기관의 신뢰할 수 있는 전처리기 보관·배포 절차가 먼저 필요합니다.
+
 ## 로컬 실행
 
 Python 3.12를 기준으로 확인했습니다. 저장소 루트에서 실행합니다.
@@ -164,4 +196,10 @@ python -m venv .venv
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r webui/requirements-dev.txt
 .\.venv\Scripts\python.exe webui/tests/smoke.py
+```
+
+DB 등록 테스트는 `Medical-Data-Pipeline` 소스와 모의 검색 API를 사용합니다. 실제 검색 서버의 저장·활성화 테스트는 `Medical-Search-API` 저장소에서 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe webui/tests/test_enrollment.py
 ```

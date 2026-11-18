@@ -1,0 +1,1373 @@
+/* ============================================================
+   Blind-Match · 데이터셋 일괄 등록 (데이터셋 등록)
+
+   의료진 검색 화면 시안 C(단계형 가이드)와 같은 틀이다.
+   한 칼럼, 한 번에 한 단계. 왼쪽 숫자 레일이 뼈대다.
+
+   - 토큰 · 글자 크기 · 단계 레일 · 입력란 · 버튼 · 패널 · 카드 · 오류 상자는
+     Interface- 의 drafts/c/style.css 와 heart.css 값을 그대로 옮겼다.
+   - C에 없는 부품(현재 등록본 줄, 파일 놓는 자리, 미리보기 표, 확인 칸)만
+     같은 재료(가는 선 · 글자 · 모서리)로 새로 만들었다.
+   - 구조는 auto-fit / flex-wrap / clamp() 로 바뀐다. 미디어쿼리는 C와 같은 한 곳
+     (좁은 화면에서 입력란 묶음을 한 칸으로)뿐이다.
+   - 유동 크기는 칼럼(.guide) 너비 기준(cqi)이다.
+
+   목차
+     1. 토큰            6. 버튼
+     2. 바탕            7. 처리 과정 · 안내 목록
+     3. 머리            8. 미리보기 표
+     4. 단계 레일       9. 검색 결과 카드
+     5. 입력           10. 오류 · 요청 중 · 움직임
+   ============================================================ */
+
+
+/* 1. 토큰 ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: light;
+
+  /* 색 — 시안 C와 같다. 파랑은 유사도 막대 · 포커스 · 파일을 끌어 올 때만 쓴다 */
+  --ground: #FFFFFF;
+  --surface: #FFFFFF;
+  --ink: #17191C;
+  --ink-2: #5A5F66;
+  --hairline: #E3E4E6;
+  --edge: #9A9FA6;          /* 점선 · 장식 테두리 (흰 바탕 2.7:1) */
+  /* 입력란 테두리 · 예고 단계 숫자처럼 뜻을 전하는 회색은 3:1을 넘겨야 한다 (흰 바탕 3.4:1).
+     시안 C는 여기에도 --edge 를 쓴다. C도 같은 값으로 맞추면 좋다. */
+  --edge-strong: #868B92;
+  --accent: #2347D9;
+  --accent-tint: #EEF1FD;
+  --on-accent: #FFFFFF;
+  --tint: #F4F4F3;
+  --rail-done: #C4C7CC;
+  --rail-todo: #9A9FA6;
+
+  --ok-ink: #1B7046;        /* 완료 */
+  --off-ink: #5A5F66;       /* 미연결 */
+  --deny-ink: #BE2A1D;      /* 입력 오류 · 연결 안 됨 */
+  --deny-bg: #FBEEEC;
+  --deny-line: #E9BDB8;
+
+  /* 글꼴 */
+  --font-display: "Pretendard Variable", Pretendard, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --font-body: "Pretendard Variable", Pretendard, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+
+  /* 유동 단위: 칼럼 너비의 1% (cqi 미지원 브라우저는 뷰포트 기준) */
+  --u: 1vw;
+
+  /* 글자 크기 */
+  --fs-h1: clamp(1.25rem, calc(3.2 * var(--u)), 1.5rem);         /* 20 → 24 */
+  --fs-title: clamp(1.375rem, calc(3.6 * var(--u)), 1.625rem);  /* 22 → 26 */
+  --fs-num: clamp(1.75rem, calc(5.4 * var(--u)), 2.25rem);      /* 28 → 36 */
+  --fs-big: clamp(1.25rem, calc(3.4 * var(--u)), 1.5rem);        /* 20 → 24 */
+  --fs-body: clamp(1.0625rem, calc(2.5 * var(--u)), 1.125rem);  /* 17 → 18 */
+  --fs-sm: 0.9375rem;                                           /* 15 */
+  --fs-xs: 0.875rem;                                            /* 14 */
+
+  /* 간격 */
+  --rail-w: calc(var(--fs-num) * 0.7);                          /* 숫자 한 글자 폭 */
+  --rail-gap: clamp(12px, calc(3 * var(--u)), 24px);
+  --step-gap: clamp(52px, calc(11 * var(--u)), 88px);
+  --card-pad: clamp(18px, calc(3.8 * var(--u)), 28px);
+  --stack: clamp(24px, calc(4.4 * var(--u)), 32px);
+
+  /* 모서리 */
+  --r-card: 8px;
+  --r-field: 6px;
+  --r-pill: 6px;
+}
+
+@supports (width: 1cqi) {
+  :root { --u: 1cqi; }
+}
+
+
+/* 2. 바탕 ------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html[data-working] { cursor: progress; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p, ul, ol, dl, dd { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button, input, select { font: inherit; color: inherit; }
+
+/* 스크립트가 숨긴 요소는 아래 규칙의 display 값보다 앞선다 */
+[hidden] { display: none !important; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 문장(.s) 단위로 줄이 바뀌게 한다 */
+.s { display: inline-block; }
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip {
+  position: absolute;
+  top: -60px;
+  left: 12px;
+  z-index: 10;
+  padding: 10px 14px;
+  border-radius: var(--r-field);
+  background: var(--ink);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.skip:focus { top: 8px; }
+
+main:focus { outline: none; }
+
+/* 페이지 틀: 가운데 한 칼럼 */
+.page { padding: clamp(32px, 6%, 64px) clamp(16px, 5%, 32px) 96px; }
+
+.guide {
+  max-width: 780px;
+  margin-inline: auto;
+  container-type: inline-size;
+}
+
+.top,
+.flow,
+.foot { font-size: var(--fs-body); }
+
+
+/* 3. 머리 ------------------------------------------------------------------ */
+
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);   /* 띄어쓰기 없는 긴 이름이 머리를 화면 밖으로 밀지 않게 */
+  gap: clamp(10px, calc(2 * var(--u)), 14px);
+  /* 글줄은 모두 단계 본문의 왼쪽 선에 맞추고, 숫자와 레일만 그 바깥에 건다 */
+  padding-left: calc(var(--rail-w) + var(--rail-gap));
+  padding-bottom: clamp(36px, calc(7.5 * var(--u)), 60px);
+}
+
+.top__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.brand__name { font-weight: 700; }
+
+.brand__dot,
+.brand__sub { color: var(--ink-2); }
+
+.mode {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mode--bad { color: var(--deny-ink); }
+
+.top__title {
+  font: 700 var(--fs-h1)/1.35 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* 현재 등록본: 제목 아래 가는 선 하나로 나눈 몇 줄 */
+.now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-top: clamp(6px, calc(1.6 * var(--u)), 12px);
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+.now__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 16px;
+}
+
+.now__label {
+  font: 700 var(--fs-xs)/1.5 var(--font-body);
+  color: var(--ink-2);
+}
+
+/* 연결 다시 확인 · 다른 화면으로 가는 글자 링크 */
+.now__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 18px;
+}
+
+.now__name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.now__name.is-bad { color: var(--deny-ink); }
+
+.now__meta {
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.now__id {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 20px;
+  margin: clamp(40px, calc(8 * var(--u)), 64px) 0 0 calc(var(--rail-w) + var(--rail-gap));
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+
+/* 4. 단계 레일 ------------------------------------------------------------- */
+
+.step {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  column-gap: var(--rail-gap);
+}
+
+.step__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.step__num {
+  font: 700 var(--fs-num)/1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.step__line {
+  flex: 1 1 auto;
+  width: 2px;
+  min-height: 16px;
+  margin-block: 12px 10px;
+  background-color: var(--rail-done);
+}
+
+.step__body {
+  min-width: 0;
+  padding-bottom: var(--step-gap);
+  transition: opacity 0.2s ease;
+}
+
+.flow > .step:last-child .step__line { visibility: hidden; }
+.flow > .step:last-child .step__body { padding-bottom: 0; }
+
+.step__title {
+  font: 700 var(--fs-title)/1.35 var(--font-display);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  scroll-margin-top: 28px;
+}
+
+.step__title:focus { outline: none; }
+
+.step__lead {
+  margin-top: 10px;
+  color: var(--ink-2);
+}
+
+/* 안내 문장 아래의 수치 한 줄 (시안 C와 같다) */
+.step__tech {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+}
+
+/* 아직 오지 않은 단계: 회색 숫자 + 점선 레일 + 무엇이 나올지 한 줄 */
+.step--upcoming .step__num { color: var(--edge-strong); }
+
+.step--upcoming .step__title {
+  font-size: clamp(1.125rem, calc(3 * var(--u)), 1.25rem);
+  color: var(--ink-2);
+}
+
+.step--upcoming .step__lead {
+  margin-top: 6px;
+  font-size: var(--fs-sm);
+}
+
+/* 큰 숫자끼리 붙지 않도록, 숫자 높이 + 점선이 보일 만큼의 자리를 둔다 */
+.step--upcoming .step__body {
+  min-height: calc(var(--fs-num) + 40px);
+  padding-bottom: clamp(28px, calc(5 * var(--u)), 40px);
+}
+
+.flow > .step--upcoming:last-child .step__body { min-height: 0; }
+
+/* 다음 단계가 아직이면 이어지는 레일을 점선으로.
+   :has() 를 모르는 브라우저가 규칙 전체를 버리지 않도록 :has() 는 따로 둔다. */
+.step--upcoming .step__line,
+.step--alert .step__line {
+  border-radius: 0;
+  background: linear-gradient(to bottom, var(--rail-todo) 50%, transparent 50%) 50% 0 / 2px 8px repeat-y;
+}
+
+.step:has(+ .step--upcoming) .step__line {
+  border-radius: 0;
+  background: linear-gradient(to bottom, var(--rail-todo) 50%, transparent 50%) 50% 0 / 2px 8px repeat-y;
+}
+
+/* 오류가 난 결과 단계: 숫자 옆에 빨간 상자만 남긴다 (제목은 읽기 프로그램에만) */
+.step--alert .step__body { padding-bottom: clamp(32px, calc(6 * var(--u)), 44px); }
+
+.step--alert .step__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.step--alert .step__lead { display: none; }
+
+
+/* 5. 입력 ------------------------------------------------------------------ */
+
+/* 단계 본문 안의 내용 묶음 (시안 C의 .form) */
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--stack);
+  margin-top: var(--stack);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
+  min-height: 44px;
+}
+
+.toolbar__label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.toolbar__status {
+  font-size: 0.92rem;
+  color: var(--ink-2);
+}
+
+.toolbar__status.is-bad {
+  color: var(--deny-ink);
+  font-weight: 700;
+}
+
+/* 입력란 묶음: 가는 선 아래 제목 한 줄 + 두 칸 격자 */
+.groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--stack);
+}
+
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 18px 0 3px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.group__title {
+  float: left;                   /* legend 를 일반 블록처럼 흐르게 한다 */
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.group__fields {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 16px;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+
+.field__label {
+  grid-area: 1 / 1;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.field__input {
+  grid-area: 2 / 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 92px 0 14px;        /* 오른쪽은 단위가 놓이는 자리 */
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  scroll-margin-top: 96px;
+}
+
+.field__input::-webkit-outer-spin-button,
+.field__input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+/* :where() 로 점수를 낮춰 포커스 · 오류 · 꺼짐 테두리가 마우스를 올려도 그대로 남게 한다 */
+.field__input:where(:hover:not(:disabled)) { border-color: var(--ink); }
+
+.field__input:focus-visible {
+  border-color: var(--accent);
+  outline-offset: 2px;
+}
+
+.field__input:disabled {
+  border-color: var(--hairline);
+  background: var(--tint);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.field__unit {
+  grid-area: 2 / 1;
+  justify-self: end;
+  align-self: center;
+  padding-right: 18px;
+  color: var(--ink-2);
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+.field__hint {
+  grid-area: 3 / 1;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.field__flag { display: none; }
+
+/* 오류 칸: 굵은 테두리 + 색 + 사유 */
+.field__input[aria-invalid="true"] {
+  padding-left: 13px;
+  border: 2px solid var(--deny-ink);
+}
+
+.field__input[aria-invalid="true"] ~ .field__hint {
+  color: var(--deny-ink);
+  font-weight: 500;
+}
+
+.field__input[aria-invalid="true"] ~ .field__hint .field__flag { display: inline; }
+
+/* 글자 입력란 (데이터셋 이름) */
+.field__input--text {
+  padding-right: 14px;
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+/* 묶음 안의 입력란은 한 단계 작게 (heart.css 와 같다) */
+.group .field__input { font-size: 1rem; }
+
+.group .field__input--bare { padding-right: 14px; }
+
+.group .field__input--select {
+  padding: 0 30px 0 13px;
+  appearance: auto;
+  -webkit-appearance: menulist;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.group .field__input--select[aria-invalid="true"] { padding-left: 12px; }
+
+.group .field__input--select:disabled { cursor: not-allowed; }
+
+.group .field__hint { font-size: 0.81rem; }
+
+/* 결과 개수 */
+.count {
+  display: grid;
+  gap: 10px;
+}
+
+.count__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.count__tech {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-field);
+  background: var(--surface);
+}
+
+.seg__opt {
+  position: relative;
+  display: block;
+}
+
+.seg__opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.seg__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  border-radius: 4px;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.seg__opt:hover .seg__face { background: var(--tint); }
+
+.seg__opt input:checked + .seg__face {
+  background: var(--ink);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.seg__opt input:focus-visible + .seg__face {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.seg__opt input:disabled { cursor: not-allowed; }
+.seg__opt input:disabled + .seg__face { opacity: 0.5; }
+
+.form__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0 20px;
+  margin-top: calc(14px - var(--stack));
+}
+
+.form__note {
+  flex: 1 1 280px;
+  padding-block: 10px;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  border-radius: 6px;
+}
+
+.link:hover { text-decoration-thickness: 2px; }
+
+button.link {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+button.link:disabled {
+  color: var(--edge);
+  text-decoration-thickness: 1px;
+  cursor: not-allowed;
+}
+
+/* 파일 놓는 자리: 점선 테두리 안에 글자와 버튼만 */
+.drop {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: var(--card-pad);
+  border: 1px dashed var(--edge);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+/* 파일을 읽은 뒤에는 실선 — 놓을 자리가 아니라 고른 파일의 이름표 */
+.drop.is-loaded {
+  border-style: solid;
+  border-color: var(--hairline);
+}
+
+/* 파일을 끌어 오는 중. 이미 읽은 뒤에 다른 파일을 끌어 와도 파란 테두리가 보이도록 뒤에 둔다 */
+.drop.is-over {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.drop__name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.drop__meta {
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.drop .btn { margin: 12px 0 4px; }
+
+/* 파일 입력은 숨기고 이름표(label)를 버튼으로 보인다. 키보드 초점은 이름표에 그린다 */
+.drop input[type="file"]:focus-visible + .btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 평문 등록 확인 칸: 누르는 자리를 줄 전체로 */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-field);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.check:hover { border-color: var(--ink); }
+
+.check:has(input:checked) { border-color: var(--ink); }
+
+.check:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+/* 줄 전체에 초점 테두리를 그릴 수 있을 때만 상자 자체의 테두리를 지운다 (:has() 미지원이면 기본 테두리) */
+.check:has(input:focus-visible) input:focus-visible { outline: none; }
+
+.check:has(input:disabled) {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+
+/* 6. 버튼 ------------------------------------------------------------------ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn--primary {
+  width: 100%;
+  min-height: 54px;
+  background: var(--ink);
+  color: var(--on-accent);
+  font-size: 1.0625rem;
+}
+
+/* 다른 화면으로 가는 링크를 같은 버튼 모양으로 (등록하기 · 검색 화면에서 찾아보기) */
+a.btn { text-decoration: none; }
+
+.btn--primary:hover:not(:disabled) { background: #000000; }
+
+.btn--ghost {
+  background: var(--surface);
+  border-color: var(--edge);
+  color: var(--ink);
+}
+
+.btn--ghost:hover {
+  border-color: var(--ink);
+  background: var(--tint);
+}
+
+.btn--ghost[aria-disabled="true"] {
+  border-color: var(--hairline);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+/* 라벨을 한 칸에 겹쳐 두고 보이는 것만 바꾼다 → 요청 중에도 버튼 크기가 그대로 */
+.btn__stack {
+  display: inline-grid;
+  justify-items: center;
+  align-items: center;
+}
+
+.btn__label {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  visibility: hidden;
+}
+
+.btn__label--idle { visibility: visible; }
+
+.btn[data-busy] .btn__label--idle { visibility: hidden; }
+.btn[data-busy] .btn__label--busy { visibility: visible; }
+
+/* 아직 누를 수 없는 주 버튼 (heart.css 와 같은 회색) */
+.btn--primary:disabled {
+  border-color: #D8DADE;
+  background: #EAEBED;
+  color: #6A6E76;
+  cursor: not-allowed;
+}
+
+/* 요청 중: 옅은 바탕 + 돌아가는 표시 */
+.btn--primary[data-busy] {
+  border-color: transparent;
+  background: var(--tint);
+  color: var(--ink);
+  cursor: progress;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+
+/* 7. 처리 과정 · 안내 목록 ------------------------------------------------- */
+
+.panel {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 16px;
+  padding: 14px var(--card-pad) 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.panel__name {
+  font: 700 var(--fs-xs)/1.5 var(--font-body);
+  color: var(--ink-2);
+}
+
+.panel__aside {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.stages { padding-block: 8px; }
+
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: clamp(10px, calc(2.4 * var(--u)), 16px);
+  padding: 14px var(--card-pad);
+}
+
+/* 마디와 마디를 잇는 가는 선 */
+.stage:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--card-pad) + 12px);
+  top: 46px;
+  bottom: -8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+/* 마디: 꽉 찬 원 + 체크(완료) · 점선 원(미연결) */
+.node {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.node--done {
+  background: var(--ok-ink);
+  color: var(--on-accent);
+}
+
+.node--off {
+  border: 1px dashed var(--edge);
+  color: var(--off-ink);
+}
+
+.stage__main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stage__say {
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* 실행되지 않은 단계는 문장도 한 톤 낮춘다 (태그가 글자로 상태를 말한다) */
+.stage--not_connected .stage__say {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* 상태 태그: 바탕 없이 색 + 글자. 줄 맨 앞에 두고 설명은 그 옆에서 줄바꿈 */
+.tech {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.tag {
+  flex: none;
+  color: var(--off-ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tag--done { color: var(--ok-ink); }
+.tag--not_connected { font-weight: 500; }
+
+.tech__text { min-width: 0; }
+
+.tech__name {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* 짧은 안내 목록: 작은 점 + 문장 */
+.points {
+  display: grid;
+  gap: 12px;
+}
+
+.points li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 14px;
+}
+
+.points li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: calc(0.8em - 2px);
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.points--quiet {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.points--quiet li::before { background: var(--ink-2); }
+
+/* 단계 본문에 바로 놓인 안내 목록 (검색 결과 확인) — 시안 C와 같은 간격 */
+.step__body > .points { margin-top: 20px; }
+
+/* 접었다 펴는 덧붙임 (이번 검색에 사용한 입력 보기) — 시안 C와 같다 */
+.more__summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding-inline: 2px;
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.more__body {
+  display: grid;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 15px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+}
+
+.inputs > div { min-width: 0; }
+
+.inputs dt {
+  font-size: 0.83rem;
+  color: var(--ink-2);
+}
+
+.inputs dd {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+
+/* 8. 미리보기 표 ----------------------------------------------------------- */
+
+.table-scroll {
+  overflow-x: auto;
+  border-radius: 0 0 var(--r-card) var(--r-card);
+}
+
+/* 초점 테두리는 상자 바깥에: 안쪽에 그리면 고정된 행 번호 칸이 왼쪽을 덮는다 */
+.table-scroll:focus-visible { outline-offset: 0; }
+
+/* separate: 칸마다 자기 밑줄을 그려, 가로로 밀어도 고정된 행 번호 칸의 밑줄이 따라온다 */
+.data {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.data th,
+.data td {
+  padding: 10px 18px 10px 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: bottom;
+}
+
+.data tr > :first-child { padding-left: var(--card-pad); }
+.data tr > :last-child { padding-right: var(--card-pad); }
+
+.data tbody tr:last-child > * { border-bottom: 0; }
+
+.data thead th {
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.data thead small {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.data td { font-weight: 500; }
+
+/* 행 번호: 가로로 밀어도 왼쪽에 남는다 */
+.data tr > :first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+}
+
+.data tbody th {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.data td.is-missing {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+
+/* 9. 검색 결과 카드 -------------------------------------------------------- */
+
+.note {
+  margin-top: 18px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.cards {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: var(--card-pad);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, calc(2.4 * var(--u)), 16px);
+}
+
+/* 320px에서도 기록 ID가 "R00000 / 1"로 쪼개지지 않게, 줄어드는 쪽은 유사도 칸이 맡는다 */
+.card__head > .stat:not(.stat--score) { flex-shrink: 0; }
+
+.stat {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stat--score {
+  margin-left: auto;
+  justify-items: end;
+  text-align: right;
+}
+
+.stat__label {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.rank {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 2.5rem;
+  color: var(--ink-2);
+}
+
+.rank__n {
+  font: 700 var(--fs-big)/1.15 var(--font-display);
+  color: var(--ink);
+}
+
+.rank__u {
+  margin-left: 1px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.stat__value {
+  font: 700 var(--fs-big)/1.15 var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  height: 6px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.bar__fill {
+  display: block;
+  width: calc(var(--pct, 0) * 1%);
+  height: 100%;
+  background: var(--accent);
+}
+
+
+/* 10. 오류 · 요청 중 · 움직임 ---------------------------------------------- */
+
+.alert {
+  display: grid;
+  gap: 4px;
+  padding: var(--card-pad);
+  border-radius: var(--r-card);
+  background: var(--deny-bg);
+  scroll-margin-top: 28px;
+}
+
+.alert:focus { outline: none; }
+
+.alert__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--deny-ink);
+}
+
+.alert__lead { line-height: 1.6; }
+
+.alert__list {
+  display: grid;
+  margin-top: 10px;
+  border-top: 1px solid var(--deny-line);
+}
+
+.alert__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 16px;
+  min-height: 52px;
+  padding-block: 4px;
+  border-bottom: 1px solid var(--deny-line);
+}
+
+.alert__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.alert__field {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 6.5em;
+  font-weight: 700;
+  color: var(--ink);
+  border-radius: 6px;
+}
+
+a.alert__field {
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 5px;
+}
+
+a.alert__field:hover { color: var(--deny-ink); }
+
+/* 넓으면 이름 옆에, 좁으면 모든 줄이 똑같이 이름 아래로 */
+.alert__msg { flex: 1 1 15em; }
+
+/* 상자 아래의 다른 화면 링크 (예: 데이터셋 등록 화면으로) */
+.alert__action { margin-top: 4px; }
+
+.alert__action .link { color: var(--ink); }
+
+/* 지난 검색 결과 안내 — 비어 있으면 자리를 차지하지 않는다 */
+.stale:not(:empty) {
+  margin-top: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--deny-line);
+  border-radius: var(--r-field);
+  background: var(--deny-bg);
+  color: var(--deny-ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* 요청 중: 버튼 문구가 바뀌고, 결과가 생길 단계는 흐려지고, 누른 단계의 레일이 흐른다 */
+.step[aria-busy="true"] .step__body {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.step[aria-busy="true"] .step__num { color: var(--edge-strong); }
+
+.step[data-flowing] .step__line {
+  border-radius: 0;
+  background: linear-gradient(to bottom, var(--ink) 50%, transparent 50%) 50% 0 / 2px 14px repeat-y;
+  animation: rail-flow 0.55s linear infinite;
+}
+
+@keyframes rail-flow {
+  to { background-position: 50% 14px; }
+}
+
+/* 좁은 화면: 입력란 묶음을 한 칸으로 (시안 C와 같은 기준) */
+@media (max-width: 560px) {
+  .group__fields,
+  .inputs { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Windows 고대비 테마: 배경색이 지워져도 고른 결과 개수가 보이게 시스템 색으로 칠한다 */
+@media (forced-colors: active) {
+  .seg__opt input:checked + .seg__face {
+    forced-color-adjust: none;
+    background: SelectedItem;
+    color: SelectedItemText;
+  }
+
+  .seg__opt input:checked:disabled + .seg__face {
+    background: GrayText;
+    color: Canvas;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 인쇄: 버튼 · 링크는 빼고, 미리보기 표는 잘리지 않게 펼친다. 고른 파일 이름은 남긴다 */
+@media print {
+  .page { padding: 0; }
+
+  .btn,
+  .link,
+  .check { display: none; }
+
+  .table-scroll { overflow: visible; }
+
+  .data {
+    table-layout: fixed;
+    white-space: normal;
+    font-size: 0.75rem;
+  }
+
+  .data th,
+  .data td {
+    padding-right: 6px;
+    overflow-wrap: anywhere;
+  }
+
+  .data tr > :first-child { position: static; }
+
+  .seg__opt input:checked + .seg__face {
+    background: none;
+    color: var(--ink);
+    outline: 2px solid var(--ink);
+    outline-offset: -2px;
+  }
+}
